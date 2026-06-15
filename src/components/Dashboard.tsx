@@ -8,7 +8,8 @@ import {
   AuditLog, 
   PromotionApplication, 
   Question,
-  QuerySystemConfig
+  QuerySystemConfig,
+  QuestionType
 } from "../types";
 import { exportSurveyToCSV } from "../utils/csv";
 import { 
@@ -35,7 +36,8 @@ import {
   ChevronRight,
   TrendingUp,
   FileCheck2,
-  Lock
+  Lock,
+  Link
 } from "lucide-react";
 import LogView from "./LogView";
 
@@ -107,6 +109,38 @@ export default function Dashboard({
   const [configNewQueryPw, setConfigNewQueryPw] = useState("");
   const [configNewQueryEditable, setConfigNewQueryEditable] = useState<string[]>([]);
 
+  // Promo Select Option states
+  const [showPromoSelect, setShowPromoSelect] = useState(false);
+  const [promoTargetRole, setPromoTargetRole] = useState<UserRole>(UserRole.OPERATOR);
+  const [promoTargetStar, setPromoTargetStar] = useState<number>(1);
+
+  // Dynamic Questionnaire Editor state
+  const [editingSurveyId, setEditingSurveyId] = useState<string | null>(null);
+  const [editSurveyTitle, setEditSurveyTitle] = useState("");
+  const [editSurveyDesc, setEditSurveyDesc] = useState("");
+  const [editSurveyPwReq, setEditSurveyPwReq] = useState(false);
+  const [editSurveyPw, setEditSurveyPw] = useState("");
+  const [editSurveyEmail, setEditSurveyEmail] = useState(false);
+  const [editSurveyStart, setEditSurveyStart] = useState("");
+  const [editSurveyEnd, setEditSurveyEnd] = useState("");
+  const [editSurveyQuestions, setEditSurveyQuestions] = useState<Question[]>([]);
+
+  // Dynamic Questionnaire Editor's "+ Add New Question" temp state
+  const [editTempQTitle, setEditTempQTitle] = useState("");
+  const [editTempQType, setEditTempQType] = useState<QuestionType>("SHORT_TEXT");
+  const [editTempQOptions, setEditTempQOptions] = useState("");
+  const [editTempQRequired, setEditTempQRequired] = useState(true);
+
+  // Merged sub-query subsystem states inside editor
+  const [editNewQueryName, setEditNewQueryName] = useState("");
+  const [editNewQueryEditable, setEditNewQueryEditable] = useState<string[]>([]);
+  const [editNewQueryPwReq, setEditNewQueryPwReq] = useState(false);
+  const [editNewQueryPw, setEditNewQueryPw] = useState("");
+  const [editNewQuerySearchQId, setEditNewQuerySearchQId] = useState(""); // EMPTY means default Response ID, otherwise question ID
+
+  // RBAC rename states
+  const [rbacRenameInput, setRbacRenameInput] = useState("");
+
   // RBAC User Star or Table assign state (Super Admin only)
   const [rbacUsers, setRbacUsers] = useState<Record<string, any>>({});
   const [rbacSelectedUser, setRbacSelectedUser] = useState<string>("");
@@ -174,17 +208,16 @@ export default function Dashboard({
     }
   }, [questionnaires, currentUser, selectedSurveyId]);
 
-  // Promote Apply center (Operator/Analyst 3-Star can apply for promotion)
+  // Promote Apply center (Operator/Analyst can apply for promotion and choose target)
   const canApplyPromotion = (): boolean => {
-    if (currentUser.role === UserRole.OPERATOR && currentUser.starLevel === 3) return true;
-    if (currentUser.role === UserRole.ANALYST && currentUser.starLevel === 3) return true;
+    if (currentUser.role === UserRole.OPERATOR || currentUser.role === UserRole.ANALYST) return true;
     return false;
   };
 
-  const handleApplyPromotion = () => {
+  const handleApplyPromotionSubmit = () => {
     const existingActive = promotions.find(p => p.username === currentUser.username && p.status === "PENDING");
     if (existingActive) {
-      alert("您已有一筆審核中的晉級申請，請静候超級管理員核准！");
+      alert("⚠️ 您已有一筆審核中的晉級申請，請静候超級管理員核准！");
       return;
     }
 
@@ -193,8 +226,8 @@ export default function Dashboard({
       username: currentUser.username,
       currentRole: currentUser.role,
       currentStar: currentUser.starLevel,
-      targetRole: currentUser.role === UserRole.OPERATOR ? UserRole.SYSTEM_ADMIN : UserRole.OPERATOR,
-      targetStar: currentUser.role === UserRole.OPERATOR ? undefined : 1,
+      targetRole: promoTargetRole,
+      targetStar: promoTargetRole === UserRole.SYSTEM_ADMIN ? undefined : (promoTargetStar as StarLevel),
       status: "PENDING",
       createdAt: new Date().toISOString().replace("T", " ").substring(0, 19)
     };
@@ -203,11 +236,18 @@ export default function Dashboard({
     addLog(
       "提出職級晉升申請",
       "用戶權限分級制度",
-      `${currentUser.username} (${currentUser.role === UserRole.OPERATOR ? "三星操作員" : "三星分析員"}) 申請晉升為：${
-        currentUser.role === UserRole.OPERATOR ? "系統管理員" : "一星操作員"
+      `${currentUser.username} 提出權限晉升申請，請求晉升為：${
+        promoTargetRole === UserRole.SYSTEM_ADMIN 
+          ? "系統管理員" 
+          : `${promoTargetRole === UserRole.OPERATOR ? "操作員" : "分析員"} (${promoTargetStar}星)`
       }`
     );
-    alert("您的晉級申請已成功送出！將提報予超級管理員進行審批。");
+    alert(`🎉 您的晉升申請（期望職位: ${
+      promoTargetRole === UserRole.SYSTEM_ADMIN 
+        ? "系統管理員" 
+        : `${promoTargetRole === UserRole.OPERATOR ? "操作員" : "分析員"} (${promoTargetStar}星)`
+    }）已成功送出！將提報予超級管理員進行審批。`);
+    setShowPromoSelect(false);
   };
 
   // Approve Promotion
@@ -511,6 +551,197 @@ export default function Dashboard({
     }
   };
 
+  // Synchronize rbac rename input
+  useEffect(() => {
+    if (rbacSelectedUser) {
+      setRbacRenameInput(rbacSelectedUser);
+    } else {
+      setRbacRenameInput("");
+    }
+  }, [rbacSelectedUser]);
+
+  const handleRenameUser = () => {
+    const cleanNewName = rbacRenameInput.trim().toLowerCase();
+    if (!cleanNewName) {
+      alert("⚠️ 請輸入想要修改的新帳號名稱！");
+      return;
+    }
+    if (cleanNewName === rbacSelectedUser) {
+      alert("⚠️ 新帳號名稱與舊名稱一致，未作修改。");
+      return;
+    }
+    if (cleanNewName === "super_admin" || rbacUsers[cleanNewName]) {
+      alert("⚠️ 此帳號名稱已被佔用，請換一個！");
+      return;
+    }
+
+    const uList = { ...rbacUsers };
+    const userToMove = uList[rbacSelectedUser];
+    if (!userToMove) return;
+
+    // Remove old property, add new property
+    delete uList[rbacSelectedUser];
+    uList[cleanNewName] = {
+      ...userToMove,
+      username: cleanNewName
+    };
+
+    localStorage.setItem("sub_users", JSON.stringify(uList));
+    setRbacUsers(uList);
+
+    // Also, we must update all promotions list matching the old username
+    const updatedPromotions = promotions.map(p => {
+      if (p.username === rbacSelectedUser) {
+        return { ...p, username: cleanNewName };
+      }
+      return p;
+    });
+    onUpdatePromotions(updatedPromotions);
+
+    addLog(
+      "修改系統帳號名稱",
+      `更改帳號：${rbacSelectedUser} → ${cleanNewName}`,
+      `超級管理員將帳號名稱從 ${rbacSelectedUser} 變更為 ${cleanNewName}。`
+    );
+
+    alert(`🎉 帳號名稱已成功變更為 ${cleanNewName}！`);
+    setRbacSelectedUser(cleanNewName); // Switch selection to new name!
+  };
+
+  // Save survey modifications and custom questions inside editor
+  const handleSaveSurveyEditor = () => {
+    if (!editSurveyTitle.trim()) {
+      alert("⚠️ 請輸入問卷標題！");
+      return;
+    }
+    if (editSurveyQuestions.length === 0) {
+      alert("⚠️ 問卷至少需要包含一個填寫欄位/題目！");
+      return;
+    }
+
+    const updated = questionnaires.map(q => {
+      if (q.id === editingSurveyId) {
+        return {
+          ...q,
+          title: editSurveyTitle,
+          description: editSurveyDesc,
+          startTime: editSurveyStart || undefined,
+          endTime: editSurveyEnd || undefined,
+          passwordRequired: editSurveyPwReq,
+          password: editSurveyPwReq ? editSurveyPw : undefined,
+          emailNotificationEnabled: editSurveyEmail,
+          questions: editSurveyQuestions
+        };
+      }
+      return q;
+    });
+
+    onUpdateQuestionnaires(updated);
+    addLog(
+      "更新問卷設定",
+      editSurveyTitle,
+      `系統管理員編輯了問卷 ${editingSurveyId} 的基本設定，自定義並修改了題目與填寫框規格。`
+    );
+    alert("🎉 問卷設定、填寫規格與題目已全部儲存同步！");
+    setEditingSurveyId(null);
+  };
+
+  // Add question inside Questionnaire configuration editor
+  const handleEditorAddQuestion = () => {
+    if (!editTempQTitle.trim()) {
+      alert("⚠️ 請輸入題目敘述！");
+      return;
+    }
+
+    let searchArr: string[] = [];
+    if (editTempQType === "SINGLE_CHOICE" || editTempQType === "MULTI_CHOICE") {
+      if (!editTempQOptions.trim()) {
+        alert("⚠️ 單選或多選題目必須輸入選項內容！");
+        return;
+      }
+      searchArr = editTempQOptions.split(",").map(s => s.trim()).filter(Boolean);
+    }
+
+    const newQ: Question = {
+      id: `q-${Date.now()}`,
+      title: editTempQTitle,
+      type: editTempQType,
+      options: searchArr.length > 0 ? searchArr : undefined,
+      required: editTempQRequired
+    };
+
+    setEditSurveyQuestions(prev => [...prev, newQ]);
+    setEditTempQTitle("");
+    setEditTempQOptions("");
+  };
+
+  // Delete question inside editor
+  const handleEditorRemoveQuestion = (qId: string) => {
+    setEditSurveyQuestions(prev => prev.filter(q => q.id !== qId));
+    if (editNewQuerySearchQId === qId) {
+      setEditNewQuerySearchQId("");
+    }
+  };
+
+  // Re-order questions
+  const handleEditorMoveQuestion = (index: number, direction: "up" | "down") => {
+    const list = [...editSurveyQuestions];
+    if (direction === "up" && index > 0) {
+      const temp = list[index];
+      list[index] = list[index - 1];
+      list[index - 1] = temp;
+    } else if (direction === "down" && index < list.length - 1) {
+      const temp = list[index];
+      list[index] = list[index + 1];
+      list[index + 1] = temp;
+    }
+    setEditSurveyQuestions(list);
+  };
+
+  // Create sub-query system inside questionnaire setting editor
+  const handleEditorAddQuerySubsystem = () => {
+    if (!editNewQueryName.trim()) {
+      alert("⚠️ 請輸入子查詢系統名稱！");
+      return;
+    }
+
+    const newSys: QuerySystemConfig = {
+      id: `sub-query-${Date.now()}`,
+      name: editNewQueryName,
+      passwordRequired: editNewQueryPwReq,
+      password: editNewQueryPwReq ? editNewQueryPw : undefined,
+      editableQuestionIds: editNewQueryEditable,
+      searchQuestionId: editNewQuerySearchQId || undefined
+    };
+
+    const updated = questionnaires.map(q => {
+      if (q.id === editingSurveyId) {
+        return {
+          ...q,
+          querySystems: [...q.querySystems, newSys]
+        };
+      }
+      return q;
+    });
+
+    onUpdateQuestionnaires(updated);
+
+    addLog(
+      "指派子查詢系統",
+      editNewQueryName,
+      `在編輯器中為問卷「${editingSurveyId}」新增查詢通路：${editNewQueryName}，自訂搜尋屬性為：${editNewQuerySearchQId ? "指定問卷題目" : "預設填寫編號"}`
+    );
+
+    // Reset subquery fields
+    setEditNewQueryName("");
+    setEditNewQueryEditable([]);
+    setEditNewQueryPwReq(false);
+    setEditNewQueryPw("");
+    setEditNewQuerySearchQId("");
+
+    alert("🎉 子查詢系統通道已成功建立，並即時合併於本問卷設定中！");
+  };
+
   // Edit Response Save Modal
   const handleOpenEditResponseModal = (resp: SurveyResponse) => {
     setEditingResponse(resp);
@@ -585,25 +816,90 @@ export default function Dashboard({
         </div>
 
         {/* Action Header bar */}
-        <div className="flex flex-wrap items-center gap-2">
-          {canApplyPromotion() && (
-            <button
-              id="dash-apply-upgrade-btn"
-              onClick={handleApplyPromotion}
-              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-100 flex items-center space-x-1.5 transition-all cursor-pointer cursor-emerald"
-            >
-              <ArrowUpCircle className="w-4 h-4 animate-bounce" />
-              <span>向上級申請晉階級</span>
-            </button>
-          )}
+        <div className="flex flex-col space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {canApplyPromotion() && (
+              <button
+                id="dash-apply-upgrade-btn"
+                onClick={() => setShowPromoSelect(prev => !prev)}
+                className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-100 flex items-center space-x-1.5 transition-all cursor-pointer cursor-emerald"
+              >
+                <ArrowUpCircle className="w-4 h-4 animate-bounce" />
+                <span>{showPromoSelect ? "⚙️ 關閉申請設定欄" : "向上級申請晉階級"}</span>
+              </button>
+            )}
 
-          <button
-            id="dash-logout-btn"
-            onClick={onLogout}
-            className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs rounded-xl border border-rose-100 transition-all cursor-pointer"
-          >
-            登出管理系統
-          </button>
+            <button
+              id="dash-logout-btn"
+              onClick={onLogout}
+              className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs rounded-xl border border-rose-100 transition-all cursor-pointer"
+            >
+              登出管理系統
+            </button>
+          </div>
+
+          {/* Subordinate promotion destination selector */}
+          {canApplyPromotion() && showPromoSelect && (
+            <div className="p-4 bg-indigo-50/70 border border-indigo-100 rounded-2xl w-full max-w-lg text-left space-y-3 animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-indigo-100/50 pb-1.5">
+                <span className="text-xs font-bold text-indigo-900 flex items-center space-x-1">
+                  <ArrowUpCircle className="w-4 h-4 text-indigo-600" />
+                  <span>請選取期望晉級的「職稱角色與核發星等」</span>
+                </span>
+                <button onClick={() => setShowPromoSelect(false)} className="text-slate-400 hover:text-slate-600 text-xs font-bold select-none cursor-pointer">✕ 關閉</button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 block">期望晉升職位</label>
+                  <select 
+                    value={promoTargetRole} 
+                    onChange={(e) => {
+                      const r = e.target.value as UserRole;
+                      setPromoTargetRole(r);
+                      if (r === UserRole.SYSTEM_ADMIN) {
+                        setPromoTargetStar(1);
+                      }
+                    }}
+                    className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-sans text-slate-700 font-semibold"
+                  >
+                    <option value={UserRole.OPERATOR}>操作員 (Operator)</option>
+                    <option value={UserRole.ANALYST}>分析員 (Analyst)</option>
+                    <option value={UserRole.SYSTEM_ADMIN}>系統管理員 (System Admin)</option>
+                  </select>
+                </div>
+
+                {(promoTargetRole === UserRole.OPERATOR || promoTargetRole === UserRole.ANALYST) ? (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 block">期望核准等級</label>
+                    <select 
+                      value={promoTargetStar} 
+                      onChange={(e) => setPromoTargetStar(Number(e.target.value))}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-mono font-bold text-amber-600"
+                    >
+                      <option value={1}>⭐ 1 星級 (可指派 1 張表格)</option>
+                      <option value={2}>⭐⭐ 2 星級 (可指派 2 張表格)</option>
+                      <option value={3}>⭐⭐⭐ 3 星級 (可指派 3 張表格)</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div className="space-y-1 flex flex-col justify-center">
+                    <span className="text-[10px] font-bold text-slate-400 block pb-1">管理特別說明</span>
+                    <span className="text-[10px] text-slate-400 leading-tight">系統管理員自帶所有表格管理權限，不細分星等限制。</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <button
+                  onClick={handleApplyPromotionSubmit}
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer transition-colors"
+                >
+                  向超級管理員送出申請
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1069,384 +1365,888 @@ export default function Dashboard({
           {activeTab === "survey_configs" && (
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-8">
               
-              <div className="flex justify-between items-center border-b border-slate-100 pb-4">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-800">🔧 問卷制定與子查詢系統管理</h2>
-                  <p className="text-slate-500 text-xs mt-1">手動創建問卷，自定義啟用與到期時間，或為其指派多重安全隔離子查詢通道。</p>
-                </div>
-                {!isCreatingSurvey && (
-                  <button
-                    id="trigger-create-survey-mode"
-                    onClick={() => setIsCreatingSurvey(true)}
-                    className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl flex items-center space-x-1 cursor-pointer"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5" />
-                    <span>制定新問卷</span>
-                  </button>
-                )}
-              </div>
+              {editingSurveyId ? (
+                /* SECTION A: THE UNIFIED INTEGRATED SURVEY & SUB-QUERY PLANNER EDITOR */
+                <div className="p-1 space-y-6 animate-fadeIn">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-4 gap-2">
+                    <div>
+                      <span className="text-[10px] bg-slate-900 text-white font-extrabold px-2 py-0.5 rounded font-mono">問卷編輯識別碼：{editingSurveyId}</span>
+                      <h3 className="text-lg font-bold text-slate-805 mt-1">🔧 問卷欄位規格與子系統防護整合編輯器</h3>
+                      <p className="text-xs text-slate-400">在此自由變更問題說明文字、新增或拖曳排序欄位，並將子查詢頻道與查核鍵合併於此頁統一管控。</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setEditingSurveyId(null)}
+                      className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                    >
+                      ✕ 關閉並返回列表
+                    </button>
+                  </div>
 
-              {/* Questionnaire creation panel */}
-              {isCreatingSurvey ? (
-                <div className="p-5 border-2 border-indigo-200 bg-indigo-50/20 rounded-2xl space-y-4">
-                  <h3 className="text-xs font-extrabold text-indigo-900 border-b border-indigo-100 pb-2 uppercase tracking-wide flex items-center space-x-1">
-                    <span>📝 快速自定義問卷制定器</span>
-                  </h3>
+                  {/* PROMINENT DIRECT LINKS VISUALIZER WITH COPY */}
+                  <div className="bg-blue-50/85 border border-blue-100 p-4 rounded-2xl space-y-3.5">
+                    <h4 className="text-xs font-extrabold text-blue-900 flex items-center">
+                      <Link className="w-3.5 h-3.5 mr-1" />
+                      <span>🔗 問卷填寫及安全子系統直達網址一鍵複製 (前台填寫與後台查詢)</span>
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      
+                      <div className="p-3.5 bg-white border border-blue-100 rounded-xl space-y-1.5 shadow-sm">
+                        <span className="text-[10px] font-bold text-slate-400 block">📝 問卷直接填寫通道連結</span>
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="text"
+                            readOnly
+                            value={`${window.location.origin}${window.location.pathname}#fill/${editingSurveyId}`}
+                            className="w-full bg-slate-50 border border-slate-200 p-1.5 rounded font-mono text-[10px] text-slate-600 outline-none select-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#fill/${editingSurveyId}`);
+                              alert("🎉 問卷直達填寫網址已成功複製！");
+                            }}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg shadow-sm cursor-pointer shrink-0"
+                          >
+                            複製
+                          </button>
+                        </div>
+                      </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-3.5 bg-white border border-blue-105 rounded-xl space-y-1.5 shadow-sm">
+                        <span className="text-[10px] font-bold text-slate-400 block">🛡️ 安全防護子查詢分流直達連結</span>
+                        <div className="space-y-2 max-h-32 overflow-y-auto pr-1">
+                          {questionnaires.find(q => q.id === editingSurveyId)?.querySystems?.map((sys) => {
+                            const sysUrl = `${window.location.origin}${window.location.pathname}#query/${editingSurveyId}/${sys.id}`;
+                            return (
+                              <div key={sys.id} className="flex items-center justify-between p-1.5 bg-slate-50 rounded border-b border-slate-100 last:border-b-0">
+                                <span className="text-[10px] font-bold text-slate-700 truncate max-w-[140px]" title={sys.name}>
+                                  {sys.name}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(sysUrl);
+                                    alert(`🎉 子查詢分流「${sys.name}」直達網址已複製至剪貼簿！`);
+                                  }}
+                                  className="px-2.5 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[9px] rounded-md shadow-sm cursor-pointer shrink-0 transition-transform active:scale-95"
+                                >
+                                  複製通道網址
+                                </button>
+                              </div>
+                            );
+                          })}
+                          {(!questionnaires.find(q => q.id === editingSurveyId)?.querySystems || questionnaires.find(q => q.id === editingSurveyId)?.querySystems.length === 0) && (
+                            <p className="text-[10px] text-slate-400 italic mt-1.5">此問卷目前尚未指派建立任何安全查詢子系統。請在下方建立第一個。</p>
+                          )}
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* STEP 1: Survey Basic configurations */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 col-span-2 p-4 bg-white rounded-2xl border border-slate-150 shadow-sm">
+                    <div className="space-y-1 col-span-2">
+                      <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest border-l-2 border-slate-700 pl-2">一、問卷基礎名稱與日期限制</h4>
+                    </div>
+                    
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-500">問卷標題</label>
+                      <label className="text-[10px] font-bold text-slate-550">問卷標題</label>
                       <input
-                        id="new-survey-title"
                         type="text"
-                        placeholder="例如: 社區環境衛生回饋表"
-                        value={newSurveyTitle}
-                        onChange={(e) => setNewSurveyTitle(e.target.value)}
-                        className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs focus:border-indigo-500"
+                        value={editSurveyTitle}
+                        onChange={(e) => setEditSurveyTitle(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-semibold focus:border-slate-800 focus:bg-white"
                       />
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-500">啟用時間、到期通知與限制時間點</label>
+                      <label className="text-[10px] font-bold text-slate-550">啟用與截止時間</label>
                       <div className="flex space-x-1">
                         <input
-                          id="new-survey-time-start"
                           type="datetime-local"
-                          value={newSurveyStart}
-                          onChange={(e) => setNewSurveyStart(e.target.value)}
-                          className="w-1/2 bg-white border border-slate-200 rounded-lg p-1.5 text-xs focus:border-indigo-500 font-mono"
-                          title="起始時間"
+                          value={editSurveyStart}
+                          onChange={(e) => setEditSurveyStart(e.target.value)}
+                          className="w-1/2 bg-slate-50 border border-slate-200 p-1.5 rounded-lg text-xs font-mono"
                         />
                         <input
-                          id="new-survey-time-end"
                           type="datetime-local"
-                          value={newSurveyEnd}
-                          onChange={(e) => setNewSurveyEnd(e.target.value)}
-                          className="w-1/2 bg-white border border-slate-200 rounded-lg p-1.5 text-xs focus:border-indigo-500 font-mono"
-                          title="截止時間"
+                          value={editSurveyEnd}
+                          onChange={(e) => setEditSurveyEnd(e.target.value)}
+                          className="w-1/2 bg-slate-50 border border-slate-200 p-1.5 rounded-lg text-xs font-mono"
                         />
                       </div>
                     </div>
-                  </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-500">問卷說明描述文字</label>
-                    <textarea
-                      id="new-survey-desc"
-                      rows={2}
-                      placeholder="請介紹此問卷的目的、宣導語與填載對象說明..."
-                      value={newSurveyDesc}
-                      onChange={(e) => setNewSurveyDesc(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs focus:border-indigo-500"
-                    />
-                  </div>
-
-                  {/* Anti-fraud password access and automatic email notifications settings */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl border border-indigo-100">
-                    <div className="space-y-2">
-                      <label className="flex items-center space-x-2 text-xs font-bold text-slate-700 cursor-pointer">
-                        <input
-                          id="new-survey-pw-checkbox"
-                          type="checkbox"
-                          checked={newSurveyPwReq}
-                          onChange={(e) => setNewSurveyPwReq(e.target.checked)}
-                          className="w-4 h-4 text-indigo-600 rounded"
-                        />
-                        <span>限制必須填寫密碼才可填表</span>
-                      </label>
-                      
-                      {newSurveyPwReq && (
-                        <input
-                          id="new-survey-pw-input"
-                          type="text"
-                          placeholder="請指定問卷填寫解鎖密碼..."
-                          value={newSurveyPw}
-                          onChange={(e) => setNewSurveyPw(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-mono"
-                        />
-                      )}
+                    <div className="space-y-1.5 col-span-2">
+                      <label className="text-[10px] font-bold text-slate-550">填表說明/前導文描述內容</label>
+                      <textarea
+                        rows={2}
+                        value={editSurveyDesc}
+                        onChange={(e) => setEditSurveyDesc(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs focus:border-slate-800 focus:bg-white"
+                      />
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="flex items-center space-x-2 text-xs font-bold text-slate-700 cursor-pointer">
-                        <input
-                          id="new-survey-email-checkbox"
-                          type="checkbox"
-                          checked={newSurveyEmail}
-                          onChange={(e) => setNewSurveyEmail(e.target.checked)}
-                          className="w-4 h-4 text-indigo-600 rounded"
-                        />
-                        <span className="flex items-center">
-                          <Mail className="w-3.5 h-3.5 mr-1" />
-                          <span>啟用電子郵件自動通知填寫者機制</span>
-                        </span>
-                      </label>
-                      <p className="text-[9px] text-slate-400">啟用後，填寫者於送出時可指定其電子郵件信箱，系統將自動派送備份驗證通知信。</p>
-                    </div>
-                  </div>
-
-                  {/* Add questions block */}
-                  <div className="bg-white p-4 rounded-xl border border-indigo-100 space-y-3">
-                    <h4 className="text-xs font-bold text-slate-700">添加問卷題目</h4>
-                    
-                    <div className="space-y-2.5 p-3.5 bg-slate-50 rounded-lg">
-                      <div className="flex gap-2">
-                        <input
-                          id="temp-q-title"
-                          type="text"
-                          placeholder="題目敘述問題？"
-                          value={tempQTitle}
-                          onChange={(e) => setTempQTitle(e.target.value)}
-                          className="flex-1 bg-white border border-slate-250 p-2 rounded text-xs"
-                        />
-                        <select
-                          id="temp-q-type"
-                          value={tempQType}
-                          onChange={(e) => setTempQType(e.target.value as any)}
-                          className="bg-white border border-slate-250 p-2 rounded text-xs font-bold"
-                        >
-                          <option value="SINGLE_CHOICE">單選題 (MCQ)</option>
-                          <option value="MULTI_CHOICE">多選題 (Checkbox)</option>
-                          <option value="SHORT_TEXT">簡答題 (Short Text)</option>
-                          <option value="PARAGRAPH">詳答申論題 (Paragraph)</option>
-                          <option value="RATING">滿意度星評 (Rating 1-5)</option>
-                        </select>
-                      </div>
-
-                      {/* Display choices input conditionally */}
-                      {(tempQType === "SINGLE_CHOICE" || tempQType === "MULTI_CHOICE") && (
-                        <input
-                          id="temp-q-options"
-                          type="text"
-                          placeholder="選項 (請用半形英文逗號 [ , ] 隔開每個選項)"
-                          value={tempQOptions}
-                          onChange={(e) => setTempQOptions(e.target.value)}
-                          className="w-full bg-white border border-slate-250 p-2 rounded text-xs font-mono"
-                        />
-                      )}
-
-                      <div className="flex justify-between items-center">
-                        <label className="flex items-center space-x-2 text-[10px] text-slate-500 cursor-pointer">
+                    <div className="p-3.5 bg-slate-50/60 rounded-xl border border-slate-105 col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="flex items-center space-x-2 text-xs font-bold text-slate-600 cursor-pointer select-none">
                           <input
-                            id="temp-q-required-checkbox"
                             type="checkbox"
-                            checked={tempQRequired}
-                            onChange={(e) => setTempQRequired(e.target.checked)}
-                            className="w-3 h-3 text-indigo-600 rounded"
+                            checked={editSurveyPwReq}
+                            onChange={(e) => setEditSurveyPwReq(e.target.checked)}
+                            className="w-3.5 h-3.5 rounded text-indigo-600 cursor-pointer"
                           />
-                          <span>設定此題為「必填」問題</span>
+                          <span>限制必須填寫問卷金鑰解鎖密碼</span>
                         </label>
+                        {editSurveyPwReq && (
+                          <input
+                            type="text"
+                            placeholder="設定前台填表解鎖密碼..."
+                            value={editSurveyPw}
+                            onChange={(e) => setEditSurveyPw(e.target.value)}
+                            className="bg-white border rounded border-slate-200 p-2 w-full text-xs font-mono"
+                          />
+                        )}
+                      </div>
+
+                      <div className="flex flex-col justify-end">
+                        <label className="flex items-center space-x-2 text-xs font-bold text-slate-600 cursor-pointer select-none mb-2">
+                          <input
+                            type="checkbox"
+                            checked={editSurveyEmail}
+                            onChange={(e) => setEditSurveyEmail(e.target.checked)}
+                            className="w-3.5 h-3.5 rounded text-indigo-600 cursor-pointer"
+                          />
+                          <span>填答送出自動派發電子郵件副本（給填寫人自留）</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* STEP 2: Questions customized builder List */}
+                  <div className="p-4 bg-white rounded-2xl border border-slate-150 shadow-sm space-y-4">
+                    <h4 className="text-xs font-bold text-slate-605 uppercase tracking-widest border-l-2 border-indigo-700 pl-2">
+                      二、問卷題目自訂（可直接修改題目、必填與選項內容，並拖拽排序）
+                    </h4>
+
+                    {/* Draggable/Re-ordered items */}
+                    <div className="space-y-3.5 max-h-[380px] overflow-y-auto pr-1">
+                      {editSurveyQuestions.map((q, qidx) => (
+                        <div key={q.id} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3 shadow-xs">
+                          <div className="flex flex-wrap items-center justify-between gap-1 border-b border-slate-200/50 pb-1.5">
+                            <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-200/40 px-1.5 py-0.5 rounded">
+                              編輯問題項目 #{qidx + 1} (技術唯一鍵: {q.id})
+                            </span>
+                            <div className="flex items-center space-x-2">
+                              <button
+                                type="button"
+                                disabled={qidx === 0}
+                                onClick={() => handleEditorMoveQuestion(qidx, "up")}
+                                className="p-1 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-40 font-bold text-xs select-none cursor-pointer"
+                                title="上移題目順序"
+                              >
+                                ↑ 上移
+                              </button>
+                              <button
+                                type="button"
+                                disabled={qidx === editSurveyQuestions.length - 1}
+                                onClick={() => handleEditorMoveQuestion(qidx, "down")}
+                                className="p-1 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-40 font-bold text-xs select-none cursor-pointer"
+                                title="下移題目順序"
+                              >
+                                ↓ 下移
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleEditorRemoveQuestion(q.id)}
+                                className="px-2.5 py-1 text-[10px] bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold rounded-md cursor-pointer"
+                              >
+                                移除此題目
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Options editor */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="space-y-1 md:col-span-1.5">
+                              <label className="text-[9px] font-bold text-slate-400 block">題目說明文字</label>
+                              <input
+                                type="text"
+                                value={q.title}
+                                onChange={(e) => {
+                                  const updated = [...editSurveyQuestions];
+                                  updated[qidx].title = e.target.value;
+                                  setEditSurveyQuestions(updated);
+                                }}
+                                className="bg-white border rounded border-slate-200 text-xs p-1.5 w-full font-medium"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 block">欄位格式</label>
+                              <select
+                                value={q.type}
+                                onChange={(e) => {
+                                  const updated = [...editSurveyQuestions];
+                                  updated[qidx].type = e.target.value as QuestionType;
+                                  if (updated[qidx].type !== "SINGLE_CHOICE" && updated[qidx].type !== "MULTI_CHOICE") {
+                                    delete updated[qidx].options;
+                                  } else {
+                                    updated[qidx].options = updated[qidx].options || ["選項A", "選項B"];
+                                  }
+                                  setEditSurveyQuestions(updated);
+                                }}
+                                className="bg-white border rounded border-slate-200 text-xs p-1.5 w-full font-bold select-none"
+                              >
+                                <option value="SHORT_TEXT">簡答輸入框 (Short Text)</option>
+                                <option value="PARAGRAPH">申論大段落 (Paragraph)</option>
+                                <option value="SINGLE_CHOICE">單選對話按鈕 (MCQ)</option>
+                                <option value="MULTI_CHOICE">多選核取方框 (Checkbox)</option>
+                                <option value="RATING">滿意度星級評論 (Rating 1-5)</option>
+                              </select>
+                            </div>
+
+                            <div className="flex items-center pt-3.5">
+                              <label className="flex items-center space-x-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={q.required}
+                                  onChange={(e) => {
+                                    const updated = [...editSurveyQuestions];
+                                    updated[qidx].required = e.target.checked;
+                                    setEditSurveyQuestions(updated);
+                                  }}
+                                  className="w-3.5 h-3.5 rounded text-indigo-600 cursor-pointer"
+                                />
+                                <span>強制定為「必填」欄位</span>
+                              </label>
+                            </div>
+                          </div>
+
+                          {(q.type === "SINGLE_CHOICE" || q.type === "MULTI_CHOICE") && (
+                            <div className="space-y-1 pt-1">
+                              <label className="text-[9px] font-bold text-slate-400 block">自訂選單選項值 (以英文半形逗號「 , 」隔開各選項)</label>
+                              <input
+                                type="text"
+                                value={q.options ? q.options.join(",") : ""}
+                                onChange={(e) => {
+                                  const updated = [...editSurveyQuestions];
+                                  updated[qidx].options = e.target.value.split(",").map(s => s.trim()).filter(Boolean);
+                                  setEditSurveyQuestions(updated);
+                                }}
+                                className="bg-white border rounded border-slate-200 text-xs p-1.5 font-mono w-full"
+                                placeholder="例如: 滿意,一般,不滿意"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+
+                      {editSurveyQuestions.length === 0 && (
+                        <p className="text-xs text-slate-400 italic">目前本問卷清單為空。請添加下方題目。</p>
+                      )}
+                    </div>
+
+                    {/* Dynamic add new question inside editor */}
+                    <div className="p-4 bg-slate-50 border border-slate-200/70 rounded-xl space-y-3.5">
+                      <span className="text-[11px] font-bold text-slate-600 block">➕ 新增另一題自訂題目與填寫框規格：</span>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                        <div className="space-y-1 md:col-span-1.5">
+                          <label className="text-[9px] font-bold text-slate-400 block">題目敘述內容</label>
+                          <input
+                            type="text"
+                            value={editTempQTitle}
+                            onChange={(e) => setEditTempQTitle(e.target.value)}
+                            placeholder="例如: 您的主要工作或建議分流？"
+                            className="bg-white border border-slate-250 p-1.5 rounded-lg text-xs w-full"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400 block">欄位格式與行為</label>
+                          <select
+                            value={editTempQType}
+                            onChange={(e) => setEditTempQType(e.target.value as QuestionType)}
+                            className="bg-white border border-slate-250 p-1.5 rounded-lg text-xs w-full font-bold select-none"
+                          >
+                            <option value="SHORT_TEXT">簡答輸入框 (Short Text)</option>
+                            <option value="PARAGRAPH">申論大段落 (Paragraph)</option>
+                            <option value="SINGLE_CHOICE">單選對話按鈕 (MCQ)</option>
+                            <option value="MULTI_CHOICE">多選核取方框 (Checkbox)</option>
+                            <option value="RATING">滿意度星級評論 (Rating 1-5)</option>
+                          </select>
+                        </div>
+
+                        <div className="flex items-center pt-3">
+                          <label className="flex items-center space-x-1.5 text-xs font-bold text-slate-500 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={editTempQRequired}
+                              onChange={(e) => setEditTempQRequired(e.target.checked)}
+                              className="w-3.5 h-3.5 rounded text-blue-600"
+                            />
+                            <span>定為必填項目</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {(editTempQType === "SINGLE_CHOICE" || editTempQType === "MULTI_CHOICE") && (
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400 block">選項內容設定 (請用半形英文逗號 [ , ] 隔開每個項目)</label>
+                          <input
+                            type="text"
+                            value={editTempQOptions}
+                            onChange={(e) => setEditTempQOptions(e.target.value)}
+                            placeholder="選項一,選項二,選項三"
+                            className="bg-white border border-slate-250 p-1.5 rounded-lg text-xs w-full font-mono"
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex justify-end pt-1">
                         <button
-                          id="add-q-to-temp-list-btn"
                           type="button"
-                          onClick={handleAddQuestionToTemp}
-                          className="py-1 px-3 bg-indigo-600 text-white font-bold text-xs rounded duration-150 cursor-pointer"
+                          onClick={handleEditorAddQuestion}
+                          className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow duration-150 cursor-pointer"
                         >
-                          + 填入此題目至清單
+                          + 填入此題目至問卷規格中
                         </button>
                       </div>
                     </div>
-
-                    {/* Previews added question items */}
-                    {newSurveyQs.length > 0 && (
-                      <div className="space-y-1.5 pt-2">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase block">已填寫問題清單:</span>
-                        <div className="space-y-1 max-h-36 overflow-y-auto">
-                          {newSurveyQs.map((q, qidx) => (
-                            <div key={q.id} className="p-2 bg-slate-50 text-[11px] font-mono rounded flex justify-between items-center border">
-                              <span className="text-slate-700">
-                                {qidx+1}. {q.title} ({q.type === "SINGLE_CHOICE" ? "單選" : q.type === "MULTI_CHOICE" ? "多選" : q.type === "RATING" ? "評級" : "文本型"}) {q.required && " *"}
-                              </span>
-                              <button
-                                id={`remove-q-from-temp-${q.id}`}
-                                onClick={() => setNewSurveyQs(prev => prev.filter(item => item.id !== q.id))}
-                                className="text-rose-500 hover:text-rose-700"
-                              >
-                                移除
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
 
-                  {/* Actions summary */}
-                  <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-100">
+                  {/* STEP 3: MERGED SUB-QUERY CONFIGURATION PANEL (合併只查詢系統的設定功能) */}
+                  <div className="p-4 bg-white rounded-2xl border border-slate-150 shadow-sm space-y-4">
+                    <h4 className="text-xs font-bold text-slate-605 uppercase tracking-widest border-l-2 border-amber-500 pl-2">
+                      三、合併子查詢維護系統設定（挑選問卷中某特定題目作為查詢鎖鑰，並限制金鑰更正權限）
+                    </h4>
+
+                    {/* Existing specific sub-query templates listed inside this editor page */}
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {questionnaires.find(q => q.id === editingSurveyId)?.querySystems?.map((sys) => {
+                        const hasCustomKey = !!sys.searchQuestionId;
+                        const customKeyNode = hasCustomKey 
+                          ? editSurveyQuestions.find(q => q.id === sys.searchQuestionId) 
+                          : null;
+                        const lookupDesc = customKeyNode 
+                          ? `重點定位題目: 「${customKeyNode.title}」` 
+                          : "問卷預設之填答編號 (resp-xxx)";
+                        return (
+                          <div key={sys.id} className="p-3 bg-amber-50/40 border border-amber-200/70 rounded-xl flex items-center justify-between text-xs font-mono">
+                            <div className="space-y-1">
+                              <div className="flex items-center space-x-2">
+                                <span className="font-bold text-slate-800">{sys.name}</span>
+                                <span className="text-[9px] bg-indigo-50 border border-indigo-250/25 text-indigo-700 px-1.5 py-0.5 rounded font-sans font-bold">
+                                  查核校對鍵：{lookupDesc}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-400">
+                                安全防核: {sys.passwordRequired ? `密鑰鎖: ${sys.password}` : "不設防"} | 更正授權問題數: {sys.editableQuestionIds?.length || 0} 個
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteQuerySubsystem(editingSurveyId, sys.id, sys.name)}
+                              className="px-2.5 py-1 text-[10px] bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold rounded-md cursor-pointer"
+                            >
+                              卸載並停用
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {(!questionnaires.find(q => q.id === editingSurveyId)?.querySystems || questionnaires.find(q => q.id === editingSurveyId)?.querySystems.length === 0) && (
+                        <p className="text-xs text-slate-400 italic">目前尚未為此問卷配置任何獨立專利子查詢通道系統。</p>
+                      )}
+                    </div>
+
+                    {/* Builder layout for adding nested sub-queries with customizable search options */}
+                    <div className="p-4 bg-slate-50 border border-slate-200/70 rounded-xl space-y-4">
+                      <span className="text-[11px] font-bold text-[slate-700] block">➕ 派生此問卷之防護子查詢分流，並自訂查找項目欄：</span>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-slate-500">分流顯示名稱 (例如: 社區理監事專用更正鍵)</label>
+                          <input
+                            type="text"
+                            value={editNewQueryName}
+                            onChange={(e) => setEditNewQueryName(e.target.value)}
+                            placeholder="請填入子查詢渠道名"
+                            className="w-full bg-white border border-slate-250 p-2 rounded-lg text-xs"
+                          />
+                        </div>
+
+                        {/* SELECT QUESTION DIRECTLY AS SEARCH IDENTIFIER */}
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-indigo-900 flex items-center space-x-1">
+                            <span>🎯 配置查核鍵 (子查詢定位校對鍵值)</span>
+                            <span className="text-[8px] bg-indigo-100 text-indigo-850 px-1 py-0.2 rounded uppercase select-none font-extrabold">核心功能</span>
+                          </label>
+                          <select
+                            value={editNewQuerySearchQId}
+                            onChange={(e) => setEditNewQuerySearchQId(e.target.value)}
+                            className="w-full bg-white border border-indigo-200 p-2 rounded-lg text-xs font-semibold text-indigo-950 focus:border-indigo-500 cursor-pointer"
+                          >
+                            <option value="">預設系統：系統自動核發的填答申報碼 (resp-xxx)</option>
+                            {editSurveyQuestions.map((q) => (
+                              <option key={q.id} value={q.id}>
+                                選擇題目：{q.title} ({q.type === "SHORT_TEXT" ? "簡答輸入" : "單多選評估"})
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-[9px] text-slate-400">系統支持此自定欄位！查詢人在首頁使用此分流查詢時，輸入該問題答案即可匹配出填表回覆！</p>
+                        </div>
+
+                        <div className="space-y-1.5 md:col-span-2">
+                          <label className="text-[10px] font-bold text-slate-500">授權該子系統端「允許修改編輯」的資料問題範圍</label>
+                          <div className="flex flex-wrap gap-2 p-2 bg-white rounded-lg border border-slate-200 max-h-32 overflow-y-auto">
+                            {editSurveyQuestions.map((ques) => {
+                              const isChecked = editNewQueryEditable.includes(ques.id);
+                              return (
+                                <label key={ques.id} className="flex items-center space-x-1.5 text-[10px] bg-slate-50 border border-slate-100 px-2 py-1 rounded-md cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setEditNewQueryEditable(prev => [...prev, ques.id]);
+                                      } else {
+                                        setEditNewQueryEditable(prev => prev.filter(i => i !== ques.id));
+                                      }
+                                    }}
+                                    className="w-3.5 h-3.5 rounded text-amber-600"
+                                  />
+                                  <span className="truncate max-w-[120px]" title={ques.title}>{ques.title}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1 items-center">
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={editNewQueryPwReq}
+                            onChange={(e) => setEditNewQueryPwReq(e.target.checked)}
+                            className="w-3.5 h-3.5 rounded text-indigo-600 cursor-pointer"
+                          />
+                          <span className="text-xs font-bold text-slate-600">限制特權校驗密碼保護</span>
+                        </div>
+
+                        {editNewQueryPwReq && (
+                          <input
+                            type="text"
+                            value={editNewQueryPw}
+                            onChange={(e) => setEditNewQueryPw(e.target.value)}
+                            placeholder="設定查詢端特權登入鎖..."
+                            className="w-full bg-white border border-slate-300 p-1.5 rounded-lg text-xs font-mono"
+                          />
+                        )}
+                      </div>
+
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={handleEditorAddQuerySubsystem}
+                          className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg shadow transition-colors cursor-pointer"
+                        >
+                          確認在此問卷新增此子查詢通路
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* BOTTOM ACTION BUTTONS */}
+                  <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200">
                     <button
-                      id="cancel-create-survey-btn"
                       type="button"
-                      onClick={() => setIsCreatingSurvey(false)}
-                      className="py-1.5 px-3 border border-slate-200 text-slate-500 font-bold text-xs rounded-xl hover:bg-slate-50 cursor-pointer"
+                      onClick={() => setEditingSurveyId(null)}
+                      className="px-4 py-2 border border-slate-200 text-slate-500 font-bold text-xs rounded-xl hover:bg-slate-50 cursor-pointer"
                     >
-                      取消
+                      不儲存返回列表
                     </button>
                     <button
-                      id="save-new-survey-btn"
                       type="button"
-                      onClick={handleSaveNewSurvey}
-                      className="py-1.5 px-5 bg-slate-950 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer"
+                      onClick={handleSaveSurveyEditor}
+                      className="px-6 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-md transition-colors cursor-pointer"
                     >
-                      確設定並公開此問卷
+                      確認保存並同步問卷與子查詢設定
                     </button>
                   </div>
                 </div>
-              ) : null}
+              ) : (
+                /* SECTION B: CONVENTIONAL OVERVIEW LIST & CREATION FLOW */
+                <div className="space-y-8 animate-fadeIn">
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+                    <div>
+                      <h2 className="text-lg font-bold text-slate-800">🔧 問卷制定與子查詢系統管理</h2>
+                      <p className="text-slate-500 text-xs mt-1">手動創建問卷，自定義啟用與到期時間，或為其指派多重安全隔離子查詢通道。</p>
+                    </div>
+                    {!isCreatingSurvey && (
+                      <button
+                        id="trigger-create-survey-mode"
+                        onClick={() => setIsCreatingSurvey(true)}
+                        className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl flex items-center space-x-1 cursor-pointer"
+                      >
+                        <PlusCircle className="w-3.5 h-3.5" />
+                        <span>制定新問卷</span>
+                      </button>
+                    )}
+                  </div>
 
-              {/* Questionnaire management list */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-bold text-slate-700">📋 目前發布中之問卷與獨立查詢通路編輯</h3>
-                <div className="grid grid-cols-1 gap-4">
-                  {questionnaires.map((q) => (
-                    <div key={q.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <span className="text-xs font-mono font-bold text-slate-400 bg-slate-200/60 px-1.5 py-0.5 rounded">ID: {q.id}</span>
-                            <span className={`w-2 h-2 rounded-full ${q.isActive ? "bg-emerald-500 animate-ping" : "bg-rose-500"}`} />
-                            <span className="text-[10px] font-bold text-slate-400">{q.isActive ? "填寫中" : "停用/待啟用"}</span>
-                          </div>
-                          <h4 className="text-sm font-bold text-slate-800 mt-1">{q.title}</h4>
+                  {/* Questionnaire creation panel */}
+                  {isCreatingSurvey ? (
+                    <div className="p-5 border-2 border-indigo-200 bg-indigo-50/20 rounded-2xl space-y-4">
+                      <h3 className="text-xs font-extrabold text-indigo-900 border-b border-indigo-100 pb-2 uppercase tracking-wide flex items-center space-x-1">
+                        <span>📝 快速自定義問卷制定器</span>
+                      </h3>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-500">問卷標題</label>
+                          <input
+                            id="new-survey-title"
+                            type="text"
+                            placeholder="例如: 社區環境衛生回饋表"
+                            value={newSurveyTitle}
+                            onChange={(e) => setNewSurveyTitle(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs focus:border-indigo-500"
+                          />
                         </div>
 
-                        <div className="flex space-x-2">
-                          <button
-                            id={`toggle-survey-status-${q.id}`}
-                            onClick={() => {
-                              const updated = questionnaires.map(item => item.id === q.id ? { ...item, isActive: !item.isActive } : item);
-                              onUpdateQuestionnaires(updated);
-                              addLog(
-                                q.isActive ? "手動停用問卷" : "手動啟用問卷",
-                                q.title,
-                                `問卷與通道狀態切換為: ${!q.isActive ? "在線啟用" : "手動停用"}`
-                              );
-                            }}
-                            className={`px-2 py-1 text-[10px] font-bold rounded cursor-pointer ${
-                              q.isActive 
-                                ? "bg-amber-100 text-amber-800" 
-                                : "bg-emerald-100 text-emerald-800"
-                            }`}
-                          >
-                            {q.isActive ? "手動下架/停用" : "重新啟用問卷"}
-                          </button>
-                          
-                          <button
-                            id={`delete-survey-completely-${q.id}`}
-                            onClick={() => handleDeleteSurvey(q.id, q.title)}
-                            className="p-1 text-rose-600 hover:bg-rose-50 rounded"
-                            title="刪除此問卷數據"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-500">限制活動時間(起迄)</label>
+                          <div className="flex space-x-1">
+                            <input
+                              id="new-survey-time-start"
+                              type="datetime-local"
+                              value={newSurveyStart}
+                              onChange={(e) => setNewSurveyStart(e.target.value)}
+                              className="w-1/2 bg-white border border-slate-200 rounded-lg p-1.5 text-xs focus:border-indigo-500 font-mono"
+                              title="起始時間"
+                            />
+                            <input
+                              id="new-survey-time-end"
+                              type="datetime-local"
+                              value={newSurveyEnd}
+                              onChange={(e) => setNewSurveyEnd(e.target.value)}
+                              className="w-1/2 bg-white border border-slate-200 rounded-lg p-1.5 text-xs focus:border-indigo-500 font-mono"
+                              title="截止時間"
+                            />
+                          </div>
                         </div>
                       </div>
 
-                      {/* Add new Query system inside this survey */}
-                      <div className="bg-white p-4 rounded-xl border border-slate-200/80 space-y-3">
-                        <div className="text-xs font-extrabold text-slate-700">➕ 為此問卷指派新的「防護子查詢子系統」</div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-slate-400">子查詢子系統顯示名稱</label>
-                            <input
-                              id={`query-input-name-${q.id}`}
-                              type="text"
-                              value={configNewQueryName}
-                              onChange={(e) => setConfigNewQueryName(e.target.value)}
-                              placeholder="例如: 設備科專用查詢頻道"
-                              className="w-full bg-slate-50 border p-1.5 rounded text-xs"
-                            />
-                          </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-500">問卷說明描述文字</label>
+                        <textarea
+                          id="new-survey-desc"
+                          rows={2}
+                          placeholder="請介紹此問卷的目的、宣導語與填載對象說明..."
+                          value={newSurveyDesc}
+                          onChange={(e) => setNewSurveyDesc(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs focus:border-indigo-500"
+                        />
+                      </div>
 
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-slate-400">指定此通道「更正修改權限」的題目範圍</label>
-                            <div className="flex flex-wrap gap-1.5 p-1 bg-slate-50 rounded border max-h-24 overflow-y-auto">
-                              {q.questions.map((ques) => {
-                                const isChecked = configNewQueryEditable.includes(ques.id);
-                                return (
-                                  <label key={ques.id} className="flex items-center space-x-1.5 text-[9px] bg-white px-1.5 py-0.5 rounded cursor-pointer select-none">
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={(e) => {
-                                        if (e.target.checked) {
-                                          setConfigNewQueryEditable(prev => [...prev, ques.id]);
-                                        } else {
-                                          setConfigNewQueryEditable(prev => prev.filter(i => i !== ques.id));
-                                        }
-                                      }}
-                                      className="w-2.5 h-2.5 rounded text-amber-600"
-                                    />
-                                    <span className="truncate max-w-[80px]" title={ques.title}>{ques.title}</span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                          <div className="flex items-center space-x-2">
+                      {/* Anti-fraud password access and automatic email notifications settings */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl border border-indigo-100">
+                        <div className="space-y-2">
+                          <label className="flex items-center space-x-2 text-xs font-bold text-slate-700 cursor-pointer">
                             <input
-                              id={`query-pw-checkbox-${q.id}`}
+                              id="new-survey-pw-checkbox"
                               type="checkbox"
-                              checked={configNewQueryPwReq}
-                              onChange={(e) => setConfigNewQueryPwReq(e.target.checked)}
-                              className="w-3.5 h-3.5 text-indigo-600 rounded"
+                              checked={newSurveyPwReq}
+                              onChange={(e) => setNewSurveyPwReq(e.target.checked)}
+                              className="w-4 h-4 text-indigo-600 rounded cursor-pointer"
                             />
-                            <span className="text-[11px] font-bold text-slate-600">查詢解鎖密碼限制防護</span>
-                          </div>
-
-                          {configNewQueryPwReq && (
+                            <span>限制必須填寫密碼才可填表</span>
+                          </label>
+                          
+                          {newSurveyPwReq && (
                             <input
-                              id={`query-pw-input-${q.id}`}
+                              id="new-survey-pw-input"
                               type="text"
-                              value={configNewQueryPw}
-                              onChange={(e) => setConfigNewQueryPw(e.target.value)}
-                              placeholder="配置查詢端解鎖密碼..."
-                              className="w-full bg-slate-50 border p-1 rounded text-xs px-2 font-mono"
+                              placeholder="請指定問卷填寫解鎖密碼..."
+                              value={newSurveyPw}
+                              onChange={(e) => setNewSurveyPw(e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-mono"
                             />
                           )}
                         </div>
 
-                        <div className="flex justify-end pt-1">
-                          <button
-                            id={`submit-new-subsystem-btn-${q.id}`}
-                            onClick={() => handleAddQuerySubsystem(q.id)}
-                            className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-1 px-4 rounded cursor-pointer"
-                          >
-                            確設定並建立該專利子查詢系統分流
-                          </button>
+                        <div className="space-y-2">
+                          <label className="flex items-center space-x-2 text-xs font-bold text-slate-700 cursor-pointer">
+                            <input
+                              id="new-survey-email-checkbox"
+                              type="checkbox"
+                              checked={newSurveyEmail}
+                              onChange={(e) => setNewSurveyEmail(e.target.checked)}
+                              className="w-4 h-4 text-indigo-600 rounded cursor-pointer"
+                            />
+                            <span className="flex items-center">
+                              <Mail className="w-3.5 h-3.5 mr-1" />
+                              <span>啟用電子郵件自動通知填寫者機制</span>
+                            </span>
+                          </label>
+                          <p className="text-[9px] text-slate-400">啟用後，填寫者於送出時可指定其電子郵件信箱，系統將自動派送備份驗證通知信。</p>
                         </div>
                       </div>
 
-                      {/* Display active query systems of this Questionnaire */}
-                      {q.querySystems && q.querySystems.length > 0 && (
-                        <div className="bg-slate-200/30 p-3 rounded-xl border border-slate-200">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">已指派之安全子系統通道 (互不干涉切換)：</span>
-                          <div className="divide-y divide-slate-100 bg-white rounded-lg p-2 font-mono space-y-1">
-                            {q.querySystems.map((sys) => (
-                              <div key={sys.id} className="flex justify-between items-center text-[11px] py-1.5 px-1">
-                                <div>
-                                  <span className="font-bold text-slate-700">{sys.name}</span>
-                                  <span className="text-[9px] text-slate-400 ml-2">({sys.passwordRequired ? `特權密碼: ${sys.password}` : "公開可存取查詢"})</span>
-                                </div>
-                                <button
-                                  id={`remove-query-sub-${sys.id}`}
-                                  onClick={() => handleDeleteQuerySubsystem(q.id, sys.id, sys.name)}
-                                  className="text-rose-500 hover:text-rose-700 text-[10px] font-semibold"
-                                >
-                                  卸載通道
-                                </button>
-                              </div>
-                            ))}
+                      {/* Add questions block */}
+                      <div className="bg-white p-4 rounded-xl border border-indigo-100 space-y-3">
+                        <h4 className="text-xs font-bold text-slate-700 font-sans">添加問卷題目</h4>
+                        
+                        <div className="space-y-2.5 p-3.5 bg-slate-50 rounded-lg">
+                          <div className="flex gap-2">
+                            <input
+                              id="temp-q-title"
+                              type="text"
+                              placeholder="題目敘述問題？"
+                              value={tempQTitle}
+                              onChange={(e) => setTempQTitle(e.target.value)}
+                              className="flex-1 bg-white border border-slate-250 p-2 rounded text-xs"
+                            />
+                            <select
+                              id="temp-q-type"
+                              value={tempQType}
+                              onChange={(e) => setTempQType(e.target.value as any)}
+                              className="bg-white border border-slate-250 p-2 rounded text-xs font-bold"
+                            >
+                              <option value="SINGLE_CHOICE">單選題 (MCQ)</option>
+                              <option value="MULTI_CHOICE">多選題 (Checkbox)</option>
+                              <option value="SHORT_TEXT">簡答題 (Short Text)</option>
+                              <option value="PARAGRAPH">詳答申論題 (Paragraph)</option>
+                              <option value="RATING">滿意度星評 (Rating 1-5)</option>
+                            </select>
+                          </div>
+
+                          {/* Display choices input conditionally */}
+                          {(tempQType === "SINGLE_CHOICE" || tempQType === "MULTI_CHOICE") && (
+                            <input
+                              id="temp-q-options"
+                              type="text"
+                              placeholder="選項 (請用半形英文逗號 [ , ] 隔開每個選項)"
+                              value={tempQOptions}
+                              onChange={(e) => setTempQOptions(e.target.value)}
+                              className="w-full bg-white border border-slate-250 p-2 rounded text-xs font-mono"
+                            />
+                          )}
+
+                          <div className="flex justify-between items-center">
+                            <label className="flex items-center space-x-2 text-[10px] text-slate-500 cursor-pointer">
+                              <input
+                                id="temp-q-required-checkbox"
+                                type="checkbox"
+                                checked={tempQRequired}
+                                onChange={(e) => setTempQRequired(e.target.checked)}
+                                className="w-3 h-3 text-indigo-600 rounded cursor-pointer"
+                              />
+                              <span>設定此題為「必填」問題</span>
+                            </label>
+                            <button
+                              id="add-q-to-temp-list-btn"
+                              type="button"
+                              onClick={handleAddQuestionToTemp}
+                              className="py-1 px-3 bg-indigo-600 text-white font-bold text-xs rounded duration-150 cursor-pointer"
+                            >
+                              + 填入此題目至清單
+                            </button>
                           </div>
                         </div>
-                      )}
 
+                        {newSurveyQs.length > 0 && (
+                          <div className="space-y-1.5 pt-2">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase block">已分配問題清單:</span>
+                            <div className="space-y-1 max-h-36 overflow-y-auto">
+                              {newSurveyQs.map((q, qidx) => (
+                                <div key={q.id} className="p-2 bg-slate-50 text-[11px] font-mono rounded flex justify-between items-center border border-slate-200">
+                                  <span className="text-slate-700">
+                                    {qidx+1}. {q.title} ({q.type === "SINGLE_CHOICE" ? "單選" : q.type === "MULTI_CHOICE" ? "多選" : q.type === "RATING" ? "評級" : "文本型"}) {q.required && " *"}
+                                  </span>
+                                  <button
+                                    id={`remove-q-from-temp-${q.id}`}
+                                    onClick={() => setNewSurveyQs(prev => prev.filter(item => item.id !== q.id))}
+                                    className="text-rose-500 hover:text-rose-700 text-xs font-bold"
+                                  >
+                                    移除
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Actions summary */}
+                      <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-100 font-sans">
+                        <button
+                          id="cancel-create-survey-btn"
+                          type="button"
+                          onClick={() => setIsCreatingSurvey(false)}
+                          className="py-1.5 px-3 border border-slate-200 text-slate-500 font-bold text-xs rounded-xl hover:bg-slate-50 cursor-pointer"
+                        >
+                          取消
+                        </button>
+                        <button
+                          id="save-new-survey-btn"
+                          type="button"
+                          onClick={handleSaveNewSurvey}
+                          className="py-1.5 px-5 bg-slate-950 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer"
+                        >
+                          儲存並公開此自訂問卷
+                        </button>
+                      </div>
                     </div>
-                  ))}
+                  ) : null}
+
+                  {/* Questionnaire management list */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-slate-750 font-sans">📋 目前發布中之自定義問卷與管理：</h3>
+                    <div className="grid grid-cols-1 gap-5">
+                      {questionnaires.map((q) => (
+                        <div key={q.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-150 shadow-sm space-y-4 font-sans text-xs">
+                          <div className="flex items-start justify-between flex-wrap gap-2">
+                            <div>
+                              <div className="flex items-center space-x-2">
+                                <span className="text-xs font-mono font-bold text-slate-500 bg-slate-200/60 px-1.5 py-0.5 rounded">ID: {q.id}</span>
+                                <span className={`w-2 h-2 rounded-full ${q.isActive ? "bg-emerald-500 animate-ping" : "bg-rose-500"}`} />
+                                <span className="text-[10px] font-bold text-slate-500">{q.isActive ? "填寫中" : "停用/待啟用"}</span>
+                              </div>
+                              <h4 className="text-base font-bold text-slate-800 mt-1.5">{q.title}</h4>
+                              <p className="text-[11px] text-slate-400 mt-1 max-w-xl">{q.description}</p>
+                            </div>
+
+                            <div className="flex space-x-1.5">
+                              {/* TRIGGER INTEGRATED CONFIGURATION & QUESTION RE-ORDERING EDITOR */}
+                              <button
+                                id={`edit-survey-configs-btn-${q.id}`}
+                                onClick={() => {
+                                  setEditingSurveyId(q.id);
+                                  // Copy values to editor state
+                                  setEditSurveyTitle(q.title);
+                                  setEditSurveyDesc(q.description || "");
+                                  setEditSurveyStart(q.startTime || "");
+                                  setEditSurveyEnd(q.endTime || "");
+                                  setEditSurveyPwReq(q.passwordRequired || false);
+                                  setEditSurveyPw(q.password || "");
+                                  setEditSurveyEmail(q.emailNotificationEnabled || false);
+                                  setEditSurveyQuestions([...q.questions]);
+                                }}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg shadow-sm cursor-pointer transition-transform duration-75 active:scale-95"
+                              >
+                                📝 整合修改與問卷欄位設定
+                              </button>
+
+                              <button
+                                id={`toggle-survey-status-${q.id}`}
+                                onClick={() => {
+                                  const updated = questionnaires.map(item => item.id === q.id ? { ...item, isActive: !item.isActive } : item);
+                                  onUpdateQuestionnaires(updated);
+                                  addLog(
+                                    q.isActive ? "手動停用問卷" : "手動啟用問卷",
+                                    q.title,
+                                    `問卷與通道狀態切換為: ${!q.isActive ? "在線啟用" : "手動停用"}`
+                                  );
+                                }}
+                                className={`px-2.5 py-1.5 text-[10px] font-bold rounded-lg cursor-pointer ${
+                                  q.isActive 
+                                    ? "bg-amber-100 text-amber-800" 
+                                    : "bg-emerald-105 text-emerald-800 bg-emerald-100"
+                                }`}
+                              >
+                                {q.isActive ? "停用填表" : "重啟填表"}
+                              </button>
+                              
+                              <button
+                                id={`delete-survey-completely-${q.id}`}
+                                onClick={() => handleDeleteSurvey(q.id, q.title)}
+                                className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg duration-75"
+                                title="刪除此問卷數據"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* DIRECT LINKS COPY DEPOT IN VISIBLE POSITION */}
+                          <div className="p-4 bg-blue-50/50 border border-blue-55 rounded-xl space-y-2.5 font-sans">
+                            <span className="font-bold text-blue-900 text-xs block flex items-center">
+                              <Link className="w-3.5 h-3.5 mr-1 text-blue-700" />
+                              <span>🔗 本問卷直達填寫網址與子查詢分流複製 (顯眼分享區)</span>
+                            </span>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 font-sans">
+                              
+                              <div className="flex items-center space-x-1.5 bg-white p-2 rounded-xl border border-blue-100 shadow-xs">
+                                <span className="text-[9px] font-extrabold text-slate-400 select-none shrink-0">📝 填表連結:</span>
+                                <input
+                                  type="text"
+                                  readOnly
+                                  value={`${window.location.origin}${window.location.pathname}#fill/${q.id}`}
+                                  className="bg-transparent text-[10px] text-slate-600 truncate w-full outline-none font-mono tracking-tight"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#fill/${q.id}`);
+                                    alert("🎉 問卷直達填寫網址已複製至剪貼簿！");
+                                  }}
+                                  className="px-2.5 py-1 bg-blue-650 hover:bg-blue-700 text-blue-600 hover:text-white border border-blue-200 bg-white hover:bg-blue-600 font-extrabold text-[9px] rounded-lg shrink-0 whitespace-nowrap cursor-pointer transition-colors"
+                                >
+                                  複製填表
+                                </button>
+                              </div>
+
+                              <div className="bg-white p-2 rounded-xl border border-blue-100 shadow-xs space-y-1.5">
+                                <span className="text-[9px] font-extrabold text-slate-400 select-none block">🛡️ 安全防護子查詢分流連结：</span>
+                                {q.querySystems && q.querySystems.length > 0 ? (
+                                  <div className="space-y-1.5 max-h-24 overflow-y-auto pr-0.5">
+                                    {q.querySystems.map(sys => {
+                                      const hasCustomKey = !!sys.searchQuestionId;
+                                      const customKeyNode = q.questions.find(qst => qst.id === sys.searchQuestionId);
+                                      const keyDesc = customKeyNode ? `[查核項: ${customKeyNode.title}]` : "[查核項: 預設代碼]";
+                                      return (
+                                        <div key={sys.id} className="flex items-center justify-between gap-1 border-b border-slate-50 last:border-b-0 pb-1">
+                                          <div className="flex flex-col truncate max-w-[130px]">
+                                            <span className="text-[9px] text-slate-700 font-bold truncate">{sys.name}</span>
+                                            <span className="text-[8px] text-indigo-500 font-semibold truncate leading-none">{keyDesc}</span>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#query/${q.id}/${sys.id}`);
+                                              alert(`🎉 【${sys.name}】安全性查詢直達連結已成功複製！`);
+                                            }}
+                                            className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[8px] rounded-md shrink-0 whitespace-nowrap cursor-pointer"
+                                          >
+                                            複製子系統
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <span className="text-[9px] text-slate-405 block italic text-slate-400 pl-1">目前無任何指派查询分流。請點擊「整合修改與問卷欄位設定」建置。</span>
+                                )}
+                              </div>
+
+                            </div>
+                          </div>
+
+                        </div>
+                      ))}
+                      {questionnaires.length === 0 && (
+                        <p className="text-xs text-slate-400 italic">目前尚未發布任何問卷規劃欄。點擊上方「制定新問卷」展開部署。</p>
+                      )}
+                    </div>
+                  </div>
+
                 </div>
-              </div>
+              )}
 
             </div>
           )}
@@ -1615,11 +2415,34 @@ export default function Dashboard({
 
                   {rbacSelectedUser && rbacUsers[rbacSelectedUser] && (
                     <div className="bg-white p-4 border border-slate-200/80 rounded-xl space-y-4 font-mono text-xs">
-                      <div>
-                        <span className="text-[10px] text-slate-400">目前帳號職級狀態</span>
-                        <p className="text-slate-800 font-bold text-sm">
-                          {rbacSelectedUser} [密碼: {rbacUsers[rbacSelectedUser].password}]
-                        </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block pb-1">目前帳號職級狀態</span>
+                          <p className="text-slate-800 font-bold text-sm">
+                            {rbacSelectedUser} [密碼: {rbacUsers[rbacSelectedUser].password}]
+                          </p>
+                        </div>
+
+                        {/* Username modification input block */}
+                        <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-lg flex flex-col sm:flex-row gap-2 items-end">
+                          <div className="flex-1 space-y-1">
+                            <label className="text-[9px] text-blue-800 font-bold block">變更此用戶之登入帳號名稱</label>
+                            <input
+                              type="text"
+                              value={rbacRenameInput}
+                              onChange={(e) => setRbacRenameInput(e.target.value)}
+                              placeholder="請輸入新帳號名稱..."
+                              className="bg-white border border-slate-250 rounded p-1.5 text-xs w-full font-mono outline-none focus:border-blue-500"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleRenameUser}
+                            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] rounded-md transition-colors cursor-pointer shrink-0"
+                          >
+                            確認更改名稱
+                          </button>
+                        </div>
                       </div>
 
                       {rbacUsers[rbacSelectedUser].role !== UserRole.SYSTEM_ADMIN ? (

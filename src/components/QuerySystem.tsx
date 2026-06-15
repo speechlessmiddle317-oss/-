@@ -48,20 +48,40 @@ export default function QuerySystem({
     setQueriedResponse(null);
     setSuccessMsg("");
 
-    if (!searchId.trim()) {
-      setSearchError("請輸入填寫編號！");
+    const searchKey = searchId.trim().toLowerCase();
+    if (!searchKey) {
+      setSearchError("請輸入查詢內容！");
       return;
     }
 
     // Filter responses for this specific questionnaire ONLY (strict isolation!)
     const surveyResponses = allResponses.filter(r => r.surveyId === survey.id);
-    const matched = surveyResponses.find(r => r.id.toLowerCase() === searchId.trim().toLowerCase());
+    
+    // Match based on searchQuestionId if specified, otherwise fallback to response ID
+    const matched = surveyResponses.find(r => {
+      if (queryConfig.searchQuestionId) {
+        const answerVal = r.answers[queryConfig.searchQuestionId];
+        if (answerVal !== undefined && answerVal !== null) {
+          if (Array.isArray(answerVal)) {
+            return answerVal.some(val => String(val).trim().toLowerCase() === searchKey);
+          }
+          return String(answerVal).trim().toLowerCase() === searchKey;
+        }
+        return false;
+      }
+      return r.id.toLowerCase() === searchKey;
+    });
 
     if (matched) {
       setQueriedResponse(matched);
       setEditedAnswers({ ...matched.answers });
     } else {
-      setSearchError("找不到該填寫編號，或此編號不屬於本查詢群組！");
+      if (queryConfig.searchQuestionId) {
+        const qTitle = survey.questions.find(q => q.id === queryConfig.searchQuestionId)?.title || "指定查詢欄位";
+        setSearchError(`找不到符合該「${qTitle}」之答案的問卷，請確認輸入是否正確！`);
+      } else {
+        setSearchError("找不到該填寫編號，或此編號不屬於本查詢群組！");
+      }
     }
   };
 
@@ -174,7 +194,11 @@ export default function QuerySystem({
                 type="text"
                 value={searchId}
                 onChange={(e) => setSearchId(e.target.value)}
-                placeholder="請輸入欲查詢的填寫編號 (如: resp-001 / resp-002)"
+                placeholder={
+                  queryConfig.searchQuestionId 
+                    ? `請輸入欲查詢的「${survey.questions.find(q => q.id === queryConfig.searchQuestionId)?.title || "指定欄位內容"}」之答案...`
+                    : "請輸入欲查詢的填寫編號 (如: resp-001 / resp-002)..."
+                }
                 className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:border-amber-500 focus:ring-2 focus:ring-amber-100 text-sm outline-none transition-all font-mono"
               />
             </div>
@@ -195,11 +219,20 @@ export default function QuerySystem({
           )}
 
           {/* Quick instructions with valid codes */}
-          <div className="mt-3 text-[11px] text-slate-400 flex items-center space-x-1">
-            <span>💡 提示填寫編號範例:</span>
-            <span className="font-mono bg-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded">resp-001</span>
-            <span>、</span>
-            <span className="font-mono bg-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded">resp-002</span>
+          <div className="mt-3 text-[11px] text-slate-400 flex flex-wrap items-center gap-1">
+            {queryConfig.searchQuestionId ? (
+              <>
+                <span className="font-bold text-slate-500 text-[10px] bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">自訂查詢欄位已啟用</span>
+                <span>💡 請在搜尋框中直接輸入對應「<strong className="text-slate-600 font-semibold">{survey.questions.find(q => q.id === queryConfig.searchQuestionId)?.title}</strong>」的填寫答案進行查核。</span>
+              </>
+            ) : (
+              <>
+                <span>💡 提示填寫編號範例:</span>
+                <span className="font-mono bg-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded">resp-001</span>
+                <span>、</span>
+                <span className="font-mono bg-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded">resp-002</span>
+              </>
+            )}
           </div>
         </div>
 

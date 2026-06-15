@@ -33,6 +33,7 @@ export interface QuerySystemConfig {
   passwordRequired: boolean;
   password?: string;
   editableQuestionIds: string[]; // which questions can be modified in this query system
+  searchQuestionId?: string; // Selected question ID to search by, empty means default response reference code
 }
 
 export interface Questionnaire {
