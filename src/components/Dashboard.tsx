@@ -37,7 +37,12 @@ import {
   TrendingUp,
   FileCheck2,
   Lock,
-  Link
+  Link,
+  ShieldAlert,
+  ShieldCheck,
+  Bell,
+  BellOff,
+  Users
 } from "lucide-react";
 import LogView from "./LogView";
 
@@ -71,7 +76,7 @@ export default function Dashboard({
   onUpdateCurrentUser
 }: DashboardProps) {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"analytics" | "submissions" | "survey_configs" | "rbac" | "profile" | "logs">("analytics");
+  const [activeTab, setActiveTab] = useState<"analytics" | "submissions" | "survey_configs" | "rbac" | "profile" | "logs" | "system_accounts">("analytics");
 
   // Selection
   const [selectedSurveyId, setSelectedSurveyId] = useState<string>(questionnaires[0]?.id || "");
@@ -161,6 +166,13 @@ export default function Dashboard({
   const [newUserRole, setNewUserRole] = useState<UserRole>(UserRole.OPERATOR);
   const [newUserStar, setNewUserStar] = useState<number>(1);
 
+  // Webmaster System Account Management specific filter states
+  const [sysAccountSearch, setSysAccountSearch] = useState("");
+  const [sysAccountRoleFilter, setSysAccountRoleFilter] = useState<string>("ALL");
+  const [sysAccountEditingUser, setSysAccountEditingUser] = useState<string | null>(null);
+  const [sysAccountTempPassword, setSysAccountTempPassword] = useState("");
+  const [showQuickCreateForm, setShowQuickCreateForm] = useState(false);
+
   useEffect(() => {
     setNewPersonalUsername(currentUser.username);
   }, [currentUser.username]);
@@ -180,7 +192,9 @@ export default function Dashboard({
   }, []);
 
   const addLog = (action: string, target: string, details: string) => {
-    const roleString = currentUser.role === UserRole.SUPER_ADMIN 
+    const roleString = currentUser.role === UserRole.WEBMASTER
+      ? "系統站主"
+      : currentUser.role === UserRole.SUPER_ADMIN 
       ? "超級管理員" 
       : currentUser.role === UserRole.SYSTEM_ADMIN
       ? "系統管理員"
@@ -202,7 +216,7 @@ export default function Dashboard({
 
   // Helper check if current user is allowed to access specific table
   const checkTableAccess = (surveyId: string): boolean => {
-    if (currentUser.role === UserRole.SUPER_ADMIN) {
+    if (currentUser.role === UserRole.WEBMASTER || currentUser.role === UserRole.SUPER_ADMIN) {
       return true;
     }
 
@@ -727,6 +741,10 @@ export default function Dashboard({
 
   const handleDeleteSubUser = (targetUser: string) => {
     if (!targetUser) return;
+    if (targetUser === "webmaster" || (rbacUsers[targetUser] && rbacUsers[targetUser].role === UserRole.WEBMASTER)) {
+      alert("⚠️ 系統主控站主帳號受全域最高安全特權保護，不可被刪除！");
+      return;
+    }
     if (targetUser === "super_admin") {
       alert("⚠️ 超級管理員帳號不可被刪除！");
       return;
@@ -748,14 +766,174 @@ export default function Dashboard({
     addLog(
       "刪除下屬系統帳號",
       `刪除帳號：${targetUser}`,
-      `超級管理員永久刪除了隸屬編制人員【${targetUser}】之帳號。`
+      `永久刪除了隸屬編制人員【${targetUser}】之帳號。`
     );
 
     alert(`🎉 帳號【${targetUser}】已永久刪除！`);
     setRbacSelectedUser(""); // Reset selection
   };
 
+  const [mutedPromotions, setMutedPromotions] = useState<string[]>(() => {
+    const stored = localStorage.getItem("muted_promotions");
+    return stored ? JSON.parse(stored) : [];
+  });
+
+  const handleToggleMutePromo = (promoId: string) => {
+    const updated = mutedPromotions.includes(promoId)
+      ? mutedPromotions.filter(id => id !== promoId)
+      : [...mutedPromotions, promoId];
+    setMutedPromotions(updated);
+    localStorage.setItem("muted_promotions", JSON.stringify(updated));
+    
+    const isMuted = updated.includes(promoId);
+    addLog(
+      "消息免打擾調整",
+      `案件編號: ${promoId}`,
+      `將特定職編晉升申請案件 ID ${promoId} 設定免打擾為：${isMuted ? "開啟" : "關閉"}`
+    );
+  };
+
+  const handleToggleBanUser = (targetUser: string) => {
+    if (!targetUser) return;
+    if (targetUser === "webmaster" || (rbacUsers[targetUser] && rbacUsers[targetUser].role === UserRole.WEBMASTER)) {
+      alert("⚠️ 系統主控站主帳號受全域最高特權保護，不可被封禁！");
+      return;
+    }
+    if (targetUser === currentUser.username) {
+      alert("⚠️ 為了維護當前連線，您不可以直接封禁非其他作用中的當前自我帳戶！");
+      return;
+    }
+
+    const uList = { ...rbacUsers };
+    if (!uList[targetUser]) return;
+
+    const currentBanState = !!uList[targetUser].banned;
+    uList[targetUser].banned = !currentBanState;
+
+    localStorage.setItem("sub_users", JSON.stringify(uList));
+    setRbacUsers(uList);
+
+    addLog(
+      uList[targetUser].banned ? "封禁使用者帳號" : "解除封禁使用者",
+      `帳號屬性異動：${targetUser}`,
+      `管理者將帳號【${targetUser}】的連線存取狀態設為【${uList[targetUser].banned ? "封禁停用" : "正常啟用"}】。`
+    );
+
+    alert(`🎉 帳號【${targetUser}】已儲存變更為【${uList[targetUser].banned ? "封禁停用" : "正常啟用"}】狀態！`);
+  };
+
+  const handleUpdateUserPassword = (targetUsername: string, newPasswordVal: string) => {
+    if (!newPasswordVal.trim()) {
+      alert("⚠️ 密碼不可為空！");
+      return;
+    }
+    const uList = { ...rbacUsers };
+    if (!uList[targetUsername]) return;
+
+    uList[targetUsername].password = newPasswordVal.trim();
+    localStorage.setItem("sub_users", JSON.stringify(uList));
+    setRbacUsers(uList);
+    setSysAccountEditingUser(null);
+    setSysAccountTempPassword("");
+
+    addLog(
+      "站主重設密碼",
+      `管理對象：${targetUsername}`,
+      `系統站主變更了使用者【${targetUsername}】的登入密碼。`
+    );
+    alert(`🎉 帳號 ${targetUsername} 的密碼已成功重新設定！`);
+  };
+
+  const handleUpdateUserRole = (targetUsername: string, newRole: UserRole) => {
+    const uList = { ...rbacUsers };
+    if (!uList[targetUsername]) return;
+
+    const oldRole = uList[targetUsername].role;
+    uList[targetUsername].role = newRole;
+
+    // reset or setup stars/assignedTables correctly
+    if (newRole === UserRole.SYSTEM_ADMIN || newRole === UserRole.SUPER_ADMIN || newRole === UserRole.WEBMASTER) {
+      uList[targetUsername].starLevel = undefined;
+      uList[targetUsername].assignedTables = [];
+    } else {
+      uList[targetUsername].starLevel = uList[targetUsername].starLevel || 1;
+      uList[targetUsername].assignedTables = uList[targetUsername].assignedTables || [];
+    }
+
+    localStorage.setItem("sub_users", JSON.stringify(uList));
+    setRbacUsers(uList);
+
+    addLog(
+      "站主調整身分職級",
+      `管理角色異動：${targetUsername}`,
+      `系統站主將帳號【${targetUsername}】的角色從 [${oldRole}] 調整為 [${newRole}]。`
+    );
+    alert(`🎉 帳號 ${targetUsername} 的身分角色已成功調升/調整為【${
+      newRole === UserRole.SUPER_ADMIN ? "超級管理員" :
+      newRole === UserRole.SYSTEM_ADMIN ? "系統管理員" :
+      newRole === UserRole.OPERATOR ? "操作員" : "分析員"
+    }】！`);
+  };
+
+  const handleUpdateUserStar = (targetUsername: string, newStar: number) => {
+    const uList = { ...rbacUsers };
+    if (!uList[targetUsername]) return;
+
+    uList[targetUsername].starLevel = newStar;
+
+    // Keep tables assigned within the bound of star level
+    let currentAlloc = uList[targetUsername].assignedTables || [];
+    if (currentAlloc.length > newStar) {
+      currentAlloc = currentAlloc.slice(0, newStar);
+      uList[targetUsername].assignedTables = currentAlloc;
+    }
+
+    localStorage.setItem("sub_users", JSON.stringify(uList));
+    setRbacUsers(uList);
+
+    addLog(
+      "站主異動授權星等",
+      `星等異動：${targetUsername}`,
+      `系統站主調整【${targetUsername}】的認證星階為 ${newStar} 星，最多指派問卷上限設為 ${newStar}。`
+    );
+    alert(`🎉 帳號【${targetUsername}】已成功調整為 ${newStar} 星！`);
+  };
+
+  const handleToggleUserTable = (targetUsername: string, surveyId: string) => {
+    const uList = { ...rbacUsers };
+    if (!uList[targetUsername]) return;
+
+    const currentTables: string[] = uList[targetUsername].assignedTables || [];
+    const maxAllowed = uList[targetUsername].starLevel || 1;
+    const isCurrentlyAssigned = currentTables.includes(surveyId);
+
+    let updatedTables = [...currentTables];
+    if (isCurrentlyAssigned) {
+      updatedTables = updatedTables.filter(id => id !== surveyId);
+    } else {
+      if (updatedTables.length >= maxAllowed) {
+        alert(`⚠️ 帳號【${targetUsername}】當前最高核給星等為 ${maxAllowed} 星，最多只能對應指派 ${maxAllowed} 張表單！`);
+        return;
+      }
+      updatedTables.push(surveyId);
+    }
+
+    uList[targetUsername].assignedTables = updatedTables;
+    localStorage.setItem("sub_users", JSON.stringify(uList));
+    setRbacUsers(uList);
+
+    addLog(
+      "站主調派管轄問卷",
+      `指派對象：${targetUsername}`,
+      `系統站主變更了【${targetUsername}】指派問卷列表：[${updatedTables.join(", ")}]。`
+    );
+  };
+
   const handleDeleteOwnAccount = () => {
+    if (currentUser.role === UserRole.WEBMASTER || currentUser.username === "webmaster") {
+      alert("⚠️ 系統站主具有全域唯一終極支配權益，為了確保主機安全，站主帳號不允許自毀！");
+      return;
+    }
     if (currentUser.username === "super_admin") {
       alert("⚠️ 超級管理員帳號是預設管理帳戶，為安全起見不可刪除！");
       return;
@@ -986,6 +1164,7 @@ export default function Dashboard({
               當前登入身分：
               <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-xs">
                 {currentUser.username} ({
+                  currentUser.role === UserRole.WEBMASTER ? "系統站主 👑" :
                   currentUser.role === UserRole.SUPER_ADMIN ? "超級管理員 👑" :
                   currentUser.role === UserRole.SYSTEM_ADMIN ? "系統管理員 🛡️" :
                   currentUser.role === UserRole.OPERATOR ? `操作員 ${currentUser.starLevel}星 ⭐` :
@@ -1127,8 +1306,8 @@ export default function Dashboard({
               </button>
             )}
 
-            {/* Config center: restricted to System/Super Admin */}
-            {(currentUser.role === UserRole.SUPER_ADMIN || currentUser.role === UserRole.SYSTEM_ADMIN) && (
+            {/* Config center: restricted to System/Super Admin/Webmaster */}
+            {(currentUser.role === UserRole.WEBMASTER || currentUser.role === UserRole.SUPER_ADMIN || currentUser.role === UserRole.SYSTEM_ADMIN) && (
               <button
                 id="tab-btn-survey-configs"
                 onClick={() => setActiveTab("survey_configs")}
@@ -1146,8 +1325,8 @@ export default function Dashboard({
               </button>
             )}
 
-            {/* RBAC user center: restricted to Super Admin only */}
-            {currentUser.role === UserRole.SUPER_ADMIN && (
+            {/* RBAC user center: restricted to Super Admin or Webmaster only */}
+            {(currentUser.role === UserRole.WEBMASTER || currentUser.role === UserRole.SUPER_ADMIN) && (
               <button
                 id="tab-btn-rbac"
                 onClick={() => setActiveTab("rbac")}
@@ -1169,6 +1348,25 @@ export default function Dashboard({
               </button>
             )}
 
+            {/* System Account Management: restricted to Webmaster only */}
+            {currentUser.role === UserRole.WEBMASTER && (
+              <button
+                id="tab-btn-system-accounts"
+                onClick={() => setActiveTab("system_accounts")}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === "system_accounts"
+                    ? "bg-emerald-950 text-white"
+                    : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex items-center space-x-2">
+                  <Users className="w-4 h-4 text-emerald-500" />
+                  <span>🛡️ 系統帳號全權管理</span>
+                </div>
+                <ChevronRight className="w-3 h-3 opacity-60" />
+              </button>
+            )}
+
             <button
               id="tab-btn-profile"
               onClick={() => setActiveTab("profile")}
@@ -1185,8 +1383,8 @@ export default function Dashboard({
               <ChevronRight className="w-3 h-3 opacity-60" />
             </button>
 
-            {/* Audit Logs: only open to administrators */}
-            {(currentUser.role === UserRole.SUPER_ADMIN || currentUser.role === UserRole.SYSTEM_ADMIN) && (
+            {/* Audit Logs: open to administrators and webmaster */}
+            {(currentUser.role === UserRole.WEBMASTER || currentUser.role === UserRole.SUPER_ADMIN || currentUser.role === UserRole.SYSTEM_ADMIN) && (
               <button
                 id="tab-btn-logs"
                 onClick={() => setActiveTab("logs")}
@@ -2503,8 +2701,8 @@ export default function Dashboard({
             </div>
           )}
 
-          {/* TAB 4: RBAC & Promotion Approval center (Super Admin only) */}
-          {activeTab === "rbac" && currentUser.role === UserRole.SUPER_ADMIN && (
+          {/* TAB 4: RBAC & Promotion Approval center (Super Admin or Webmaster only) */}
+          {activeTab === "rbac" && (currentUser.role === UserRole.WEBMASTER || currentUser.role === UserRole.SUPER_ADMIN) && (
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-6">
               <div>
                 <h2 className="text-lg font-bold text-slate-800">👤 角色控制與晉升批准中心 (RBAC控制模組)</h2>
@@ -2523,11 +2721,14 @@ export default function Dashboard({
                 <div className="space-y-2">
                   {promotions.filter(p => p.status === "PENDING").length > 0 ? (
                     promotions.filter(p => p.status === "PENDING").map((app) => (
-                      <div key={app.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div key={app.id} className={`bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${mutedPromotions.includes(app.id) ? "opacity-55 bg-slate-50 border-dashed" : ""}`}>
                         <div className="font-mono text-xs">
                           <p className="text-slate-500">申請時間: {app.createdAt}</p>
                           <p className="text-slate-800 font-bold mt-1">
                             申請人員: <span className="text-indigo-600">{app.username}</span>
+                            {mutedPromotions.includes(app.id) && (
+                              <span className="ml-2 bg-amber-100 text-amber-800 text-[9px] px-1.5 py-0.5 rounded font-black border border-amber-200 select-none">🔕 消息免打擾中</span>
+                            )}
                           </p>
                           <p className="text-slate-600 mt-1">
                             當前職級: <span className="p-1 bg-slate-100 rounded text-[10px]">{app.currentRole} ({app.currentStar}星)</span>
@@ -2536,7 +2737,31 @@ export default function Dashboard({
                           </p>
                         </div>
 
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
+                          {currentUser.role === UserRole.WEBMASTER && (
+                            <button
+                              id={`dnd-promo-btn-${app.id}`}
+                              type="button"
+                              onClick={() => handleToggleMutePromo(app.id)}
+                              className={`px-3 py-1.5 text-xs font-bold rounded-lg flex items-center space-x-1 border cursor-pointer transition-all ${
+                                mutedPromotions.includes(app.id)
+                                  ? "bg-amber-100 hover:bg-amber-200 text-amber-800 border-amber-300"
+                                  : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300"
+                              }`}
+                            >
+                              {mutedPromotions.includes(app.id) ? (
+                                <>
+                                  <BellOff className="w-3.5 h-3.5" />
+                                  <span>解除免打擾</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Bell className="w-3.5 h-3.5" />
+                                  <span>消息免打擾</span>
+                                </>
+                              )}
+                            </button>
+                          )}
                           <button
                             id={`approve-promo-btn-${app.id}`}
                             onClick={() => handleApprovePromo(app)}
@@ -2604,6 +2829,9 @@ export default function Dashboard({
                       <option value={UserRole.OPERATOR}>操作員 (Operator)</option>
                       <option value={UserRole.ANALYST}>分析員 (Analyst)</option>
                       <option value={UserRole.SYSTEM_ADMIN}>系統管理員 (System Admin)</option>
+                      {currentUser.role === UserRole.WEBMASTER && (
+                        <option value={UserRole.SUPER_ADMIN}>超級管理員 (Super Admin)</option>
+                      )}
                     </select>
                   </div>
 
@@ -2657,9 +2885,23 @@ export default function Dashboard({
                       className="bg-white border rounded text-xs p-1.5 focus:border-indigo-500 font-bold text-slate-700 min-w-[200px]"
                     >
                       <option value="">-- 請選取用戶 --</option>
-                      {Object.keys(rbacUsers).filter(u => u !== "super_admin").map((uname) => (
+                      {Object.keys(rbacUsers).filter(u => {
+                        if (u === currentUser.username) {
+                          return false; // Nobody should see their own account in the RBAC list
+                        }
+                        if (currentUser.role === UserRole.WEBMASTER) {
+                          return true; // Webmaster can see and manage everyone else (including Super Admin)
+                        }
+                        // Super Admin can manage other accounts except Webmaster
+                        return rbacUsers[u]?.role !== UserRole.WEBMASTER;
+                      }).map((uname) => (
                         <option key={uname} value={uname}>
-                          {uname} [當前: {rbacUsers[uname].role === UserRole.SYSTEM_ADMIN ? "系統管理員" : rbacUsers[uname].role === UserRole.OPERATOR ? "操作員" : "分析員"} {rbacUsers[uname].starLevel ? `${rbacUsers[uname].starLevel}星` : ""}]
+                          {uname} [當前: {
+                            rbacUsers[uname].role === UserRole.WEBMASTER ? "系統站主" :
+                            rbacUsers[uname].role === UserRole.SUPER_ADMIN ? "超級管理員" :
+                            rbacUsers[uname].role === UserRole.SYSTEM_ADMIN ? "系統管理員" :
+                            rbacUsers[uname].role === UserRole.OPERATOR ? "操作員" : "分析員"
+                          } {rbacUsers[uname].starLevel ? `${rbacUsers[uname].starLevel}星` : ""}] {rbacUsers[uname].banned ? "(🔴 已封禁)" : ""}
                         </option>
                       ))}
                     </select>
@@ -2671,18 +2913,47 @@ export default function Dashboard({
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-50 p-3 rounded-lg border border-slate-150 gap-2">
                           <div>
                             <span className="text-[10px] text-slate-400 block pb-1">目前帳號職級狀態</span>
-                            <p className="text-slate-800 font-bold text-sm">
-                              {rbacSelectedUser} [密碼: {rbacUsers[rbacSelectedUser].password}]
+                            <p className="text-slate-800 font-bold text-sm flex flex-wrap items-center gap-1">
+                              <span>{rbacSelectedUser} [密碼: {rbacUsers[rbacSelectedUser].password}]</span>
+                              {rbacUsers[rbacSelectedUser].banned && (
+                                <span className="bg-rose-100 text-rose-700 border border-rose-200 text-[9px] px-1.5 py-0.5 rounded font-black animate-pulse shrink-0">🔴 已封禁停用</span>
+                              )}
                             </p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSubUser(rbacSelectedUser)}
-                            className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] rounded-lg transition-colors cursor-pointer flex items-center space-x-1 shrink-0 shadow-sm"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>永久刪除此人員帳號</span>
-                          </button>
+                          <div className="flex flex-wrap gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleBanUser(rbacSelectedUser)}
+                              className={`px-3 py-1.5 font-bold text-[11px] rounded-lg transition-all cursor-pointer flex items-center space-x-1 shadow-sm ${
+                                rbacUsers[rbacSelectedUser].banned
+                                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                                  : "bg-amber-600 hover:bg-amber-700 text-white"
+                              }`}
+                            >
+                              {rbacUsers[rbacSelectedUser].banned ? (
+                                <>
+                                  <ShieldCheck className="w-3.5 h-3.5 opacity-95" />
+                                  <span>解除封禁此帳號</span>
+                                </>
+                              ) : (
+                                <>
+                                  <ShieldAlert className="w-3.5 h-3.5 opacity-95" />
+                                  <span>封禁此人員帳號</span>
+                                </>
+                              )}
+                            </button>
+                            {/* Deletion button is shielded for WEBMASTER accounts to preserve systemic integrity */}
+                            {rbacUsers[rbacSelectedUser].role !== UserRole.WEBMASTER && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSubUser(rbacSelectedUser)}
+                                className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] rounded-lg transition-all cursor-pointer flex items-center space-x-1 shadow-sm font-sans"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>永久刪除帳號</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         {/* Username modification input block */}
@@ -2707,7 +2978,53 @@ export default function Dashboard({
                         </div>
                       </div>
 
-                      {rbacUsers[rbacSelectedUser].role !== UserRole.SYSTEM_ADMIN ? (
+                      {/* Role level customization block */}
+                      <div className="p-3 bg-indigo-50/45 border border-indigo-150 rounded-lg flex flex-col sm:flex-row gap-2 items-end">
+                        <div className="flex-1 space-y-1">
+                          <label className="text-[9px] text-indigo-950 font-bold block">變更此帳號的角色職級 (Role Adjustment)</label>
+                          <select
+                            value={rbacUsers[rbacSelectedUser].role}
+                            onChange={(e) => {
+                              const targetRole = e.target.value as UserRole;
+                              if (targetRole === UserRole.SUPER_ADMIN && currentUser.role !== UserRole.WEBMASTER) {
+                                alert("⚠️ 只有系統站主可以賦予其他帳號超級管理員權限！");
+                                return;
+                              }
+                              const uList = { ...rbacUsers };
+                              uList[rbacSelectedUser].role = targetRole;
+                              if (targetRole === UserRole.SYSTEM_ADMIN || targetRole === UserRole.SUPER_ADMIN || targetRole === UserRole.WEBMASTER) {
+                                uList[rbacSelectedUser].starLevel = undefined;
+                                uList[rbacSelectedUser].assignedTables = [];
+                              } else {
+                                uList[rbacSelectedUser].starLevel = 1;
+                                uList[rbacSelectedUser].assignedTables = [];
+                              }
+                              localStorage.setItem("sub_users", JSON.stringify(uList));
+                              setRbacUsers(uList);
+                              addLog(
+                                "變更使用者角色",
+                                `調整角色：${rbacSelectedUser}`,
+                                `管理者將 【${rbacSelectedUser}】的職級轉換為 ${targetRole}。`
+                              );
+                              alert(`🎉 帳號 ${rbacSelectedUser} 的職級角色已成功變更為【${
+                                targetRole === UserRole.SUPER_ADMIN ? "超級管理員" :
+                                targetRole === UserRole.SYSTEM_ADMIN ? "系統管理員" :
+                                targetRole === UserRole.OPERATOR ? "操作員" : "分析員"
+                              }】！`);
+                            }}
+                            className="bg-white border border-slate-250 rounded p-1.5 text-xs w-full focus:border-indigo-500 font-bold text-slate-700"
+                          >
+                            <option value={UserRole.OPERATOR}>操作員 (Operator)</option>
+                            <option value={UserRole.ANALYST}>分析員 (Analyst)</option>
+                            <option value={UserRole.SYSTEM_ADMIN}>系統管理員 (System Admin)</option>
+                            {(currentUser.role === UserRole.WEBMASTER || rbacUsers[rbacSelectedUser].role === UserRole.SUPER_ADMIN) && (
+                              <option value={UserRole.SUPER_ADMIN}>超級管理員 (Super Admin)</option>
+                            )}
+                          </select>
+                        </div>
+                      </div>
+
+                      {rbacUsers[rbacSelectedUser].role !== UserRole.SYSTEM_ADMIN && rbacUsers[rbacSelectedUser].role !== UserRole.SUPER_ADMIN && rbacUsers[rbacSelectedUser].role !== UserRole.WEBMASTER ? (
                         <>
                           <div className="space-y-1.5">
                             <label className="text-[10px] font-semibold text-slate-500 block">核發星階設定</label>
@@ -2830,6 +3147,7 @@ export default function Dashboard({
                     <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-slate-600 font-mono text-xs flex justify-between items-center select-none">
                       <span>此帳戶後台權限：</span>
                       <span className="text-indigo-700 bg-indigo-50 border border-indigo-200 font-bold font-sans rounded px-2.5 py-0.5 text-[10px]">
+                        {currentUser.role === UserRole.WEBMASTER && "👑 系統站主"}
                         {currentUser.role === UserRole.SUPER_ADMIN && "⭐ 超級管理員"}
                         {currentUser.role === UserRole.SYSTEM_ADMIN && "系統管理員"}
                         {currentUser.role === UserRole.OPERATOR && "操作人員"}
@@ -2938,7 +3256,7 @@ export default function Dashboard({
                   <h2 className="text-lg font-bold text-rose-700 flex items-center gap-1.5">
                     <span>⚠️</span> 註銷並永久刪除此帳號 (自毀專區)
                   </h2>
-                  <p className="text-slate-500 text-xs mt-1">您在此處可以主動永久刪除自己的帳號。注意：此作業不可復原，超級管理員帳號不可自毀。</p>
+                  <p className="text-slate-500 text-xs mt-1">您在此處可以主動永久刪除自己的帳號。注意：此作業不可復原，系統站主與超級管理員帳號不可自毀。</p>
                 </div>
 
                 <div className="bg-white p-4 rounded-xl border border-rose-200/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -2950,9 +3268,9 @@ export default function Dashboard({
                     <button
                       type="button"
                       onClick={handleDeleteOwnAccount}
-                      disabled={currentUser.username === "super_admin"}
+                      disabled={currentUser.username === "super_admin" || currentUser.role === UserRole.WEBMASTER}
                       className={`px-4 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center space-x-1 shadow-sm ${
-                        currentUser.username === "super_admin"
+                        (currentUser.username === "super_admin" || currentUser.role === UserRole.WEBMASTER)
                           ? "bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed"
                           : "bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white"
                       }`}
@@ -2976,8 +3294,434 @@ export default function Dashboard({
                   alert("日誌已徹底清空。");
                 }
               }}
-              showAdminPrivileges={currentUser.role === UserRole.SUPER_ADMIN}
+              showAdminPrivileges={currentUser.role === UserRole.WEBMASTER || currentUser.role === UserRole.SUPER_ADMIN}
             />
+          )}
+
+          {/* TAB 7: System Accounts Management (Webmaster only) */}
+          {activeTab === "system_accounts" && currentUser.role === UserRole.WEBMASTER && (
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-1.5">
+                    <Users className="w-5 h-5 text-emerald-600" />
+                    <span>🛡️ 系統帳號全權管理控制中心 (Webmaster Console)</span>
+                  </h2>
+                  <p className="text-slate-500 text-xs mt-1">
+                    系統站主專屬控制面板：提供最完整的帳號清單與權限管理、調整角色分級、更改密碼，並支援即時封禁或刪除指定使用者。
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowQuickCreateForm(!showQuickCreateForm)}
+                  className="px-4 py-2 bg-emerald-650 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center space-x-1 cursor-pointer"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>{showQuickCreateForm ? "收合註冊面板" : "快速註冊新人員"}</span>
+                </button>
+              </div>
+
+              {/* Quick Create Account Panel */}
+              {showQuickCreateForm && (
+                <div className="p-5 bg-emerald-50/40 border border-emerald-100 rounded-2xl space-y-4 animate-fade-in">
+                  <div className="border-b border-emerald-100/60 pb-2">
+                    <h3 className="text-xs font-bold text-emerald-800">建立全新系統帳號 (新增管理、操作或分析人員)</h3>
+                    <p className="text-[10px] text-emerald-600/80 mt-0.5">系統站主可以新增任何職等之帳號（包含超級管理員）。</p>
+                  </div>
+                  <form onSubmit={handleCreateUser} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-500 block">帳號名稱 (Username)</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="例如: brandon7"
+                        value={newUsername}
+                        onChange={(e) => setNewUsername(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs focus:border-emerald-500 font-mono outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-500 block">初始密碼 (Password)</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="請輸入密碼"
+                        value={newUserPassword}
+                        onChange={(e) => setNewUserPassword(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs focus:border-emerald-500 outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-500 block">指派角色 (Role)</label>
+                      <select
+                        value={newUserRole}
+                        onChange={(e) => setNewUserRole(e.target.value as UserRole)}
+                        className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs focus:border-emerald-500 outline-none font-bold text-slate-700"
+                      >
+                        <option value={UserRole.OPERATOR}>操作員 (Operator)</option>
+                        <option value={UserRole.ANALYST}>分析員 (Analyst)</option>
+                        <option value={UserRole.SYSTEM_ADMIN}>系統管理員 (System Admin)</option>
+                        <option value={UserRole.SUPER_ADMIN}>超級管理員 (Super Admin)</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      {(newUserRole === UserRole.OPERATOR || newUserRole === UserRole.ANALYST) ? (
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 block">初始認證星等</label>
+                          <select
+                            value={newUserStar}
+                            onChange={(e) => setNewUserStar(Number(e.target.value))}
+                            className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs focus:border-emerald-500 outline-none font-mono font-bold text-amber-600"
+                          >
+                            <option value={1}>⭐ 1星 (可指派 1 張問卷)</option>
+                            <option value={2}>⭐⭐ 2星 (可指派 2 張問卷)</option>
+                            <option value={3}>⭐⭐⭐ 3星 (可指派 3 張問卷)</option>
+                          </select>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col justify-end h-full justify-center">
+                          <span className="text-[10px] text-slate-400 font-bold block pb-1">表格指派說明</span>
+                          <span className="text-[9px] text-slate-400/80 leading-tight">管理員階級預設授權所有問卷表格。</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="col-span-1 md:col-span-4 flex justify-end">
+                      <button
+                        type="submit"
+                        className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow transition-colors cursor-pointer"
+                      >
+                        ⚡ 確定新增此系統帳號
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Status metrics grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex flex-col justify-center">
+                  <span className="text-[10px] font-bold text-slate-400 block">總系統帳號</span>
+                  <span className="text-xl font-black font-mono text-slate-800">{Object.keys(rbacUsers).length} <span className="text-xs font-normal text-slate-400">名</span></span>
+                </div>
+                <div className="bg-sky-50/55 p-3 rounded-2xl border border-sky-100 flex flex-col justify-center">
+                  <span className="text-[10px] font-bold text-sky-800/80 block">超級/系統管理員</span>
+                  <span className="text-xl font-black font-mono text-sky-900">
+                    {Object.values(rbacUsers).filter((u: any) => u?.role === UserRole.SUPER_ADMIN || u?.role === UserRole.SYSTEM_ADMIN).length} <span className="text-xs font-normal text-sky-400">名</span>
+                  </span>
+                </div>
+                <div className="bg-amber-50/55 p-3 rounded-2xl border border-amber-100 flex flex-col justify-center">
+                  <span className="text-[10px] font-bold text-amber-800/80 block">操作員成員</span>
+                  <span className="text-xl font-black font-mono text-amber-900">
+                    {Object.values(rbacUsers).filter((u: any) => u?.role === UserRole.OPERATOR).length} <span className="text-xs font-normal text-amber-400">名</span>
+                  </span>
+                </div>
+                <div className="bg-indigo-50/55 p-3 rounded-2xl border border-indigo-100 flex flex-col justify-center">
+                  <span className="text-[10px] font-bold text-indigo-800/80 block">分析員成員</span>
+                  <span className="text-xl font-black font-mono text-indigo-900">
+                    {Object.values(rbacUsers).filter((u: any) => u?.role === UserRole.ANALYST).length} <span className="text-xs font-normal text-indigo-400">名</span>
+                  </span>
+                </div>
+                <div className="bg-rose-50/55 p-3 rounded-2xl border border-rose-100 flex flex-col justify-center">
+                  <span className="text-[10px] font-bold text-rose-800/80 block">已被封禁停用</span>
+                  <span className="text-xl font-black font-mono text-rose-900">
+                    {Object.values(rbacUsers).filter((u: any) => u?.banned).length} <span className="text-xs font-normal text-rose-400">名</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Filtering bar */}
+              <div className="flex flex-col md:flex-row gap-3 items-stretch justify-between pt-1">
+                {/* Mode tabs */}
+                <div className="flex flex-wrap gap-1 bg-slate-100 p-1 rounded-xl shrink-0 self-start">
+                  {[
+                    { id: "ALL", label: "👥 全部" },
+                    { id: "ADMINS", label: "👑 系統管理者" },
+                    { id: "OPERATOR", label: "⚙️ 操作員" },
+                    { id: "ANALYST", label: "📈 分析員" },
+                    { id: "BANNED", label: "🔴 已封禁" }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setSysAccountRoleFilter(tab.id)}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                        sysAccountRoleFilter === tab.id
+                          ? "bg-white text-slate-800 shadow-sm"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Filter Input */}
+                <div className="relative flex-1 max-w-full md:max-w-xs">
+                  <input
+                    type="text"
+                    placeholder="🔍 搜尋帳號名稱..."
+                    value={sysAccountSearch}
+                    onChange={(e) => setSysAccountSearch(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:bg-white outline-none focus:border-indigo-500 transition-all font-sans text-slate-800"
+                  />
+                  {sysAccountSearch && (
+                    <button
+                      onClick={() => setSysAccountSearch("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Accounts Directory Table */}
+              <div className="overflow-x-auto border border-slate-200/60 rounded-2xl shadow-xs">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-50 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-150">
+                    <tr>
+                      <th className="py-3.5 px-4 font-bold">帳號名稱 (Username)</th>
+                      <th className="py-3.5 px-4 font-bold">角色身分職階 (Role Class)</th>
+                      <th className="py-3.5 px-4 font-bold">密碼管理 (Password)</th>
+                      <th className="py-3.5 px-4 font-bold">表單對應 & 設定限制 (Assigned Tables)</th>
+                      <th className="py-3.5 px-4 font-bold text-center">狀態操控 (Status)</th>
+                      <th className="py-3.5 px-4 font-bold text-right">永久管理 action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-150 bg-white">
+                    {Object.keys(rbacUsers)
+                      .filter((uname) => {
+                        // Search query filtering
+                        if (sysAccountSearch && !uname.toLowerCase().includes(sysAccountSearch.toLowerCase().trim())) {
+                          return false;
+                        }
+                        // Role query filtering
+                        const uObject = rbacUsers[uname];
+                        if (!uObject) return false;
+                        if (sysAccountRoleFilter === "BANNED") {
+                          return !!uObject.banned;
+                        }
+                        if (sysAccountRoleFilter === "ADMINS") {
+                          return uObject.role === UserRole.WEBMASTER || uObject.role === UserRole.SUPER_ADMIN || uObject.role === UserRole.SYSTEM_ADMIN;
+                        }
+                        if (sysAccountRoleFilter === "OPERATOR") {
+                          return uObject.role === UserRole.OPERATOR;
+                        }
+                        if (sysAccountRoleFilter === "ANALYST") {
+                          return uObject.role === UserRole.ANALYST;
+                        }
+                        return true;
+                      })
+                      .map((uname) => {
+                        const uObj = rbacUsers[uname];
+                        if (!uObj) return null;
+                        const isSelf = uname === currentUser.username;
+                        const isWebmaster = uObj.role === UserRole.WEBMASTER;
+                        const isEditingPassword = sysAccountEditingUser === uname;
+
+                        return (
+                          <tr 
+                            key={uname} 
+                            className={`hover:bg-slate-50/50 transition-colors ${
+                              isWebmaster ? "bg-amber-50/15" : uObj.banned ? "bg-rose-50/10" : ""
+                            }`}
+                          >
+                            {/* Username with crown if webmaster */}
+                            <td className="py-3.5 px-4 font-semibold text-slate-800 font-mono">
+                              <div className="flex items-center space-x-1.5">
+                                {isWebmaster && <span className="text-amber-500 text-xs">👑</span>}
+                                <span className={isSelf ? "text-indigo-650 font-black decoration-double underline decoration-indigo-300" : ""}>
+                                  {uname}
+                                </span>
+                                {isSelf && (
+                                  <span className="bg-indigo-100 text-indigo-700 text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0">我</span>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Role selectors */}
+                            <td className="py-3 px-4">
+                              <select
+                                value={uObj.role}
+                                disabled={isWebmaster || isSelf}
+                                onChange={(e) => handleUpdateUserRole(uname, e.target.value as UserRole)}
+                                className={`font-bold text-[11px] border rounded-lg p-1 transition-all outline-none ${
+                                  uObj.role === UserRole.WEBMASTER
+                                    ? "bg-amber-100 border-amber-300 text-amber-800 font-serif"
+                                    : uObj.role === UserRole.SUPER_ADMIN
+                                    ? "bg-indigo-100 border-indigo-300 text-indigo-800"
+                                    : uObj.role === UserRole.SYSTEM_ADMIN
+                                    ? "bg-purple-100 border-purple-300 text-purple-800"
+                                    : uObj.role === UserRole.OPERATOR
+                                    ? "bg-amber-5 border-amber-200 text-amber-700"
+                                    : "bg-blue-5 text-blue-700 border-blue-200"
+                                }`}
+                              >
+                                <option value={UserRole.OPERATOR}>操作員 (Operator)</option>
+                                <option value={UserRole.ANALYST}>分析員 (Analyst)</option>
+                                <option value={UserRole.SYSTEM_ADMIN}>系統管理員 (System Admin)</option>
+                                {isWebmaster ? (
+                                  <option value={UserRole.WEBMASTER}>系統站主 (Webmaster)</option>
+                                ) : (
+                                  <option value={UserRole.SUPER_ADMIN}>超級管理員 (Super Admin)</option>
+                                )}
+                              </select>
+                            </td>
+
+                            {/* Password input / display */}
+                            <td className="py-3 px-4">
+                              {isEditingPassword ? (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="text"
+                                    value={sysAccountTempPassword}
+                                    onChange={(e) => setSysAccountTempPassword(e.target.value)}
+                                    placeholder="新密碼"
+                                    className="border border-slate-300 rounded px-1.5 py-1 text-xs outline-none bg-white font-mono w-24 text-slate-800"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateUserPassword(uname, sysAccountTempPassword)}
+                                    className="p-1 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                  >
+                                    儲存
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSysAccountEditingUser(null);
+                                      setSysAccountTempPassword("");
+                                    }}
+                                    className="p-1 px-2 bg-slate-205 hover:bg-slate-300 text-slate-600 rounded text-[10px] font-bold cursor-pointer"
+                                  >
+                                    x
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-xs text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/50">
+                                    {uObj.password}
+                                  </span>
+                                  <button
+                                    onClick={() => {
+                                      setSysAccountEditingUser(uname);
+                                      setSysAccountTempPassword(uObj.password);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-indigo-650 rounded transition-colors cursor-pointer"
+                                    title="修改密碼"
+                                  >
+                                    <Edit2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Star Levels and Assigned Tables list */}
+                            <td className="py-3 px-4 max-w-xs sm:max-w-md">
+                              {(uObj.role === UserRole.OPERATOR || uObj.role === UserRole.ANALYST) ? (
+                                <div className="space-y-1.5">
+                                  {/* Star Level Select */}
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[10px] text-slate-400 font-bold select-none">認證星級:</span>
+                                    <select
+                                      value={uObj.starLevel || 1}
+                                      onChange={(e) => handleUpdateUserStar(uname, Number(e.target.value))}
+                                      className="font-mono bg-white border border-slate-150 rounded text-[10px] p-0.5 text-amber-600 font-bold"
+                                    >
+                                      <option value={1}>⭐ 1星 (限1表)</option>
+                                      <option value={2}>⭐⭐ 2星 (限2表)</option>
+                                      <option value={3}>⭐⭐⭐ 3星 (限3表)</option>
+                                    </select>
+                                  </div>
+
+                                  {/* Table assigned checkboxes */}
+                                  <div className="flex flex-wrap gap-1 p-1 bg-slate-50/60 rounded border border-slate-100">
+                                    {questionnaires.map((q) => {
+                                      const isChecked = uObj.assignedTables?.includes(q.id);
+                                      return (
+                                        <button
+                                          key={q.id}
+                                          type="button"
+                                          onClick={() => handleToggleUserTable(uname, q.id)}
+                                          className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all ${
+                                            isChecked
+                                              ? "bg-indigo-600 border-indigo-600 text-white shadow-xs"
+                                              : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300"
+                                          }`}
+                                          title={q.title}
+                                        >
+                                          {isChecked ? "✓ " : ""}{q.title.substring(0, 10)}{q.title.length > 10 ? "..." : ""}
+                                        </button>
+                                      );
+                                    })}
+                                    {questionnaires.length === 0 && (
+                                      <span className="text-[10px] text-slate-400 italic">無可選分配之問卷表單</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-[11px] text-slate-500 font-bold bg-indigo-50/40 border border-indigo-100 rounded px-2 py-1 inline-block">
+                                  🪐 全域管理 (自動存取所有表單)
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Ban Toggle status button */}
+                            <td className="py-3 px-4 text-center">
+                              {isSelf || isWebmaster ? (
+                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-55 px-2 py-1 rounded-full border border-emerald-100 select-none">
+                                  豁免
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleBanUser(uname)}
+                                  className={`px-2 py-1 text-[10px] font-extrabold rounded-full transition-all border shadow-xs cursor-pointer ${
+                                    uObj.banned
+                                      ? "bg-rose-100 hover:bg-rose-200 text-rose-700 border-rose-200 animate-pulse"
+                                      : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
+                                  }`}
+                                >
+                                  {uObj.banned ? "🔴 已封禁限制" : "🟢 正常運作中"}
+                                </button>
+                              )}
+                            </td>
+
+                            {/* Deleting a user row action */}
+                            <td className="py-3 px-4 text-right">
+                              {isWebmaster || isSelf ? (
+                                <span className="text-[10px] text-slate-300 select-none italic font-sans pr-1">防呆保護</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`⚠️ 您確定要永久刪除、註銷系統帳號【${uname}】嗎？此操作將使該用戶立即失去所有訪問權限且無法回復。`)) {
+                                      handleDeleteSubUser(uname);
+                                    }
+                                  }}
+                                  className="p-1 px-2.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-lg border border-rose-200 transition-all text-[11px] font-bold inline-flex items-center space-x-1 cursor-pointer"
+                                  title="永久刪除帳號"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>刪除</span>
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="p-4 bg-amber-50/30 border border-amber-200/50 rounded-2xl">
+                <span className="text-xs font-bold text-amber-800 block">💡 系統站主（Webmaster）操作備忘錄：</span>
+                <ul className="list-disc pl-4 text-[11px] text-amber-700 space-y-1 mt-1 font-sans">
+                  <li><strong>帳號密碼保護</strong>：此清單中包含所有系統下屬帳號的存取密碼。若用戶遺失密碼，請直接點選編輯圖示或於此處強制重置其密碼。</li>
+                  <li><strong>角色職等變更</strong>：指派角色為操作員/分析員時，系統會重置其對應問卷。系統管理員和超級管理員會自帶全表存取權限。</li>
+                  <li><strong>防禦自我銷毀保護</strong>：站主帳號及超級管理帳戶不可由此處被封禁或刪除，確保核心總管權限絕對不遺失。</li>
+                </ul>
+              </div>
+            </div>
           )}
 
         </div>

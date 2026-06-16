@@ -18,6 +18,8 @@ export default function Login({ onLoginSuccess, addLog }: LoginProps) {
 
   const getRoleChinese = (role: UserRole, star?: StarLevel): string => {
     switch (role) {
+      case UserRole.WEBMASTER:
+        return "系統站主";
       case UserRole.SUPER_ADMIN:
         return "超級管理員";
       case UserRole.SYSTEM_ADMIN:
@@ -43,11 +45,27 @@ export default function Login({ onLoginSuccess, addLog }: LoginProps) {
 
     // Check localStorage users first, or fallback to INITIAL_USERS
     const storedUsers = localStorage.getItem("sub_users");
-    const usersList = storedUsers ? JSON.parse(storedUsers) : INITIAL_USERS;
+    let usersList = storedUsers ? JSON.parse(storedUsers) : { ...INITIAL_USERS };
+
+    // Self-healing check: Ensure webmaster always exists in the database
+    if (!usersList["webmaster"]) {
+      usersList["webmaster"] = {
+        username: "webmaster",
+        password: "123",
+        role: UserRole.WEBMASTER,
+        assignedTables: []
+      };
+      localStorage.setItem("sub_users", JSON.stringify(usersList));
+    }
 
     const userRecord = usersList[username.trim()];
 
     if (userRecord && userRecord.password === password) {
+      if (userRecord.banned) {
+        setError("❌ 您的帳號已被系統站主封禁停用，目前無法登入系統！如有疑問請聯絡上級管理人員。");
+        return;
+      }
+
       const appUser: AppUser = {
         username: userRecord.username,
         role: userRecord.role,

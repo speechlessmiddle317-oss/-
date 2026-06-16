@@ -1,4 +1,5 @@
 export enum UserRole {
+  WEBMASTER = "WEBMASTER",
   SUPER_ADMIN = "SUPER_ADMIN",
   SYSTEM_ADMIN = "SYSTEM_ADMIN",
   OPERATOR = "OPERATOR",
@@ -13,6 +14,8 @@ export interface AppUser {
   starLevel?: StarLevel;
   assignedTables?: string[]; // Allowed questionnaire IDs
   passwordChangeApplied?: boolean;
+  distributedToAdmins?: boolean;
+  banned?: boolean;
 }
 
 export type QuestionType = "SINGLE_CHOICE" | "MULTI_CHOICE" | "SHORT_TEXT" | "PARAGRAPH" | "RATING";

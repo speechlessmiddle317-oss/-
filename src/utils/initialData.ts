@@ -1,6 +1,12 @@
 import { Questionnaire, SurveyResponse, AuditLog, AppUser, UserRole, PromotionApplication } from "../types";
 
-export const INITIAL_USERS: Record<string, { username: string; password?: string; role?: UserRole; starLevel?: any; assignedTables?: string[] }> = {
+export const INITIAL_USERS: Record<string, { username: string; password?: string; role?: UserRole; starLevel?: any; assignedTables?: string[]; banned?: boolean }> = {
+  "webmaster": {
+    username: "webmaster",
+    password: "123",
+    role: UserRole.WEBMASTER,
+    assignedTables: []
+  },
   "super_admin": {
     username: "super_admin",
     password: "123",
