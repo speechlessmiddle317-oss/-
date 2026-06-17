@@ -1,6 +1,6 @@
 import { Questionnaire, SurveyResponse, AuditLog, AppUser, UserRole, PromotionApplication } from "../types";
 
-export const INITIAL_USERS: Record<string, { username: string; password?: string; role?: UserRole; starLevel?: any; assignedTables?: string[]; banned?: boolean }> = {
+export const INITIAL_USERS: Record<string, { username: string; password?: string; role?: UserRole; starLevel?: any; assignedTables?: string[]; banned?: boolean; respondentPoints?: number; respondentSubRank?: number }> = {
   "webmaster": {
     username: "webmaster",
     password: "123",
@@ -53,6 +53,41 @@ export const INITIAL_USERS: Record<string, { username: string; password?: string
     role: UserRole.ANALYST,
     starLevel: 1,
     assignedTables: ["survey-1"]
+  },
+  "creator_t1": {
+    username: "creator_t1",
+    password: "123",
+    role: UserRole.QUESTION_CREATOR,
+    starLevel: 1,
+    assignedTables: []
+  },
+  "creator_t2": {
+    username: "creator_t2",
+    password: "123",
+    role: UserRole.QUESTION_CREATOR,
+    starLevel: 2,
+    assignedTables: []
+  },
+  "creator_t3": {
+    username: "creator_t3",
+    password: "123",
+    role: UserRole.QUESTION_CREATOR,
+    starLevel: 3,
+    assignedTables: []
+  },
+  "respondent": {
+    username: "respondent",
+    password: "123",
+    role: UserRole.RESPONDENT,
+    respondentPoints: 0,
+    respondentSubRank: 1
+  },
+  "respondent_elite": {
+    username: "respondent_elite",
+    password: "123",
+    role: UserRole.RESPONDENT,
+    respondentPoints: 240, // 240 points / 20 = 12 answered questions => tier 2 Bronze Rank 3
+    respondentSubRank: 3
   }
 };
 

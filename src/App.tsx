@@ -163,12 +163,68 @@ export default function App() {
     // Get survey title
     const sNode = questionnaires.find(q => q.id === newResp.surveyId);
     
+    // Points-awarding mechanism for Respondents
+    let pointsLogText = "";
+    if (currentUser && currentUser.role === UserRole.RESPONDENT) {
+      const storedUsers = localStorage.getItem("sub_users");
+      if (storedUsers) {
+        const uList = JSON.parse(storedUsers);
+        const uName = currentUser.username.toLowerCase();
+        if (uList[uName]) {
+          const numQuestions = sNode?.questions?.length || 0;
+          const answeredKeys = Object.keys(newResp.answers || {}).filter(k => {
+            const val = newResp.answers[k];
+            return val !== undefined && val !== null && val !== "" && (!Array.isArray(val) || val.length > 0);
+          });
+          const answeredCount = answeredKeys.length;
+
+          let pointsPerAnswer = 7;
+          if (numQuestions >= 10 && numQuestions < 20) {
+            pointsPerAnswer = 5;
+          } else if (numQuestions >= 20) {
+            pointsPerAnswer = 3;
+          }
+
+          const ptsToAward = answeredCount * pointsPerAnswer;
+          const currentPts = uList[uName].respondentPoints || 0;
+          const nextPts = currentPts + ptsToAward;
+          uList[uName].respondentPoints = nextPts;
+
+          // Compute new tier
+          const Q = Math.floor(nextPts / 20);
+          let nextTier = 1;
+          if (Q < 9) nextTier = 1;
+          else if (Q < 18) nextTier = 2;
+          else if (Q < 34) nextTier = 3;
+          else if (Q < 50) nextTier = 4;
+          else if (Q < 75) nextTier = 5;
+          else if (Q < 100) nextTier = 6;
+          else nextTier = 7;
+
+          uList[uName].starLevel = nextTier;
+
+          localStorage.setItem("sub_users", JSON.stringify(uList));
+          
+          // Update current user state as well
+          const updatedUser = {
+            ...currentUser,
+            respondentPoints: nextPts,
+            starLevel: nextTier
+          };
+          setCurrentUser(updatedUser);
+          localStorage.setItem("sub_logged_user", JSON.stringify(updatedUser));
+
+          pointsLogText = `。填答市民獲得積分: ${ptsToAward} 點 (問卷共 ${numQuestions} 題、每答對 1 題獲 ${pointsPerAnswer} 點，實際回答 ${answeredCount} 題)。當前總積分: ${nextPts} 點、Rank段位: ${nextTier} 階`;
+        }
+      }
+    }
+
     addLog(
-      "一般填答市民",
-      "使用者",
+      currentUser?.username || "一般填答市民",
+      currentUser?.role || "使用者",
       "填寫問卷提交",
       sNode ? sNode.title : newResp.surveyId,
-      `成功填寫問卷，產生數據憑證 ${fresh.id}。電子信箱/填寫人: ${fresh.submittedBy}`
+      `成功填寫問卷，產生數據憑證 ${fresh.id}。電子信箱/填寫人: ${fresh.submittedBy}${pointsLogText}`
     );
   };
 

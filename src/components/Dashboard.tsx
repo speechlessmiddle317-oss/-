@@ -43,7 +43,16 @@ import {
   Bell,
   BellOff,
   Users,
-  User
+  User,
+  Trophy,
+  Sparkles,
+  Send,
+  Ban,
+  HelpCircle,
+  AlertTriangle,
+  FileText,
+  Pencil,
+  BookOpen
 } from "lucide-react";
 import LogView from "./LogView";
 
@@ -62,6 +71,196 @@ interface DashboardProps {
   onUpdateCurrentUser?: (updated: AppUser) => void;
 }
 
+export interface RespondentRankInfo {
+  tier: number; // 1 to 7
+  tierName: string; // 黑鐵, 青銅, 白銀, 黃金, 白金, 鑽石, 傳奇
+  subRank: string; // III, II, I, IV, V etc.
+  legendaryScroll?: number; // for Tier 7
+  legendarySegment?: number; // for Tier 7
+  questionsCount: number;
+  points: number;
+  nextRankQuestionsNeeded: number;
+}
+
+export function calculateRespondentRank(points: number): RespondentRankInfo {
+  const normPoints = Math.max(0, points);
+  const Q = Math.floor(normPoints / 20);
+  
+  if (Q < 9) {
+    // Tier 1: 0 - 8 Q, 3 sub-ranks (III, II, I), 3 Q per sub-rank
+    const subIdx = Math.floor(Q / 3); // 0, 1, 2
+    const subRanks = ["III", "II", "I"];
+    return {
+      tier: 1,
+      tierName: "黑鐵",
+      subRank: subRanks[subIdx] || "I",
+      questionsCount: Q,
+      points: normPoints,
+      nextRankQuestionsNeeded: 3 - (Q % 3)
+    };
+  } else if (Q < 18) {
+    // Tier 2: 9 - 17 Q, 3 sub-ranks (III, II, I), 3 Q per sub-rank
+    const adjustedQ = Q - 9;
+    const subIdx = Math.floor(adjustedQ / 3);
+    const subRanks = ["III", "II", "I"];
+    return {
+      tier: 2,
+      tierName: "青銅",
+      subRank: subRanks[subIdx] || "I",
+      questionsCount: Q,
+      points: normPoints,
+      nextRankQuestionsNeeded: 3 - (adjustedQ % 3)
+    };
+  } else if (Q < 34) {
+    // Tier 3: 18 - 33 Q, 4 sub-ranks (IV, III, II, I), 4 Q per sub-rank
+    const adjustedQ = Q - 18;
+    const subIdx = Math.floor(adjustedQ / 4);
+    const subRanks = ["IV", "III", "II", "I"];
+    return {
+      tier: 3,
+      tierName: "白銀",
+      subRank: subRanks[subIdx] || "I",
+      questionsCount: Q,
+      points: normPoints,
+      nextRankQuestionsNeeded: 4 - (adjustedQ % 4)
+    };
+  } else if (Q < 50) {
+    // Tier 4: 34 - 49 Q, 4 sub-ranks (IV, III, II, I), 4 Q per sub-rank
+    const adjustedQ = Q - 34;
+    const subIdx = Math.floor(adjustedQ / 4);
+    const subRanks = ["IV", "III", "II", "I"];
+    return {
+      tier: 4,
+      tierName: "黃金",
+      subRank: subRanks[subIdx] || "I",
+      questionsCount: Q,
+      points: normPoints,
+      nextRankQuestionsNeeded: 4 - (adjustedQ % 4)
+    };
+  } else if (Q < 75) {
+    // Tier 5: 50 - 74 Q, 5 sub-ranks (V, IV, III, II, I), 5 Q per sub-rank
+    const adjustedQ = Q - 50;
+    const subIdx = Math.floor(adjustedQ / 5);
+    const subRanks = ["V", "IV", "III", "II", "I"];
+    return {
+      tier: 5,
+      tierName: "白金",
+      subRank: subRanks[subIdx] || "I",
+      questionsCount: Q,
+      points: normPoints,
+      nextRankQuestionsNeeded: 5 - (adjustedQ % 5)
+    };
+  } else if (Q < 100) {
+    // Tier 6: 75 - 99 Q, 5 sub-ranks (V, IV, III, II, I), 5 Q/sub-rank
+    const adjustedQ = Q - 75;
+    const subIdx = Math.floor(adjustedQ / 5);
+    const subRanks = ["V", "IV", "III", "II", "I"];
+    return {
+      tier: 6,
+      tierName: "鑽石",
+      subRank: subRanks[subIdx] || "I",
+      questionsCount: Q,
+      points: normPoints,
+      nextRankQuestionsNeeded: 5 - (adjustedQ % 5)
+    };
+  } else {
+    // Tier 7: 100+ Q, 3 Q per sub-rank, every 5 sub-ranks = 1 scroll
+    const adjustedQ = Q - 100;
+    const totalSubRanks = Math.floor(adjustedQ / 3);
+    const scroll = Math.floor(totalSubRanks / 5) + 1;
+    const seg = (totalSubRanks % 5) + 1;
+    
+    return {
+      tier: 7,
+      tierName: "傳奇",
+      subRank: `卷 ${scroll} 第 ${seg} 階`,
+      legendaryScroll: scroll,
+      legendarySegment: seg,
+      questionsCount: Q,
+      points: normPoints,
+      nextRankQuestionsNeeded: 3 - (adjustedQ % 3)
+    };
+  }
+}
+
+export const TRIVIA_QUESTIONS = [
+  {
+    id: 1,
+    question: "下列哪一個行星通常被稱為『紅色星球』？",
+    options: ["金星", "火星", "木星", "水星"],
+    correctAnswer: "火星",
+    explanation: "火星因為表面覆蓋大量的氧化鐵膠體，外觀呈現橘紅色，故常被稱為紅色星球。"
+  },
+  {
+    id: 2,
+    question: "光在真空中傳播的速度大約是多少？",
+    options: ["每秒 30 萬公里", "每秒 3 萬公里", "每秒 300 萬公里", "每秒 3,000 公里"],
+    correctAnswer: "每秒 30 萬公里",
+    explanation: "光在真空中傳播的速度精確值為 299,792.458 公里/秒，約等同於每秒 30 萬公里。"
+  },
+  {
+    id: 3,
+    question: "網頁主要排版與結構語言『HTML』的全稱是什麼？",
+    options: [
+      "HyperText Markup Language",
+      "HighTransfer Markup Language",
+      "HyperTech Media Link",
+      "Home Tool Markup Language"
+    ],
+    correctAnswer: "HyperText Markup Language",
+    explanation: "HTML 指的是超文字標記語言 (HyperText Markup Language)，是用於建立前端網頁的標準標記語言。"
+  },
+  {
+    id: 4,
+    question: "世界三大洋中，面積最大、最深的是哪一個洋？",
+    options: ["大西洋", "印度洋", "太平洋", "北冰洋"],
+    correctAnswer: "太平洋",
+    explanation: "太平洋是地球上最大、最深的海洋，占地球表面積的三分之一，蓄水量大且島嶼眾多。"
+  },
+  {
+    id: 5,
+    question: "空氣中含量最高、占比約為百分之 78 的氣體是什麼？",
+    options: ["氧氣", "二氧化碳", "氮氣", "氬氣"],
+    correctAnswer: "氮氣",
+    explanation: "乾燥空氣的化學組成中，氮氣約占 78%，氧氣約占 21%，氬氣約占 0.93%。"
+  },
+  {
+    id: 6,
+    question: "著名電腦圖靈測試 (Turing Test) 是由哪一位著名科學家提出的？",
+    options: ["亞倫·圖靈", "阿爾伯特·愛因斯坦", "約翰·馮·諾伊曼", "史蒂芬·霍金"],
+    correctAnswer: "亞倫·圖靈",
+    explanation: "亞倫·圖靈 (Alan Turing) 在 1950 年的論文中提出圖靈測試，用以判定機器是否具有人類水平的智能。"
+  },
+  {
+    id: 7,
+    question: "植物經由光合作用，吸收二氧化碳並釋放出的主要氣體是？",
+    options: ["一氧化碳", "水蒸氣", "氫氣", "氧氣"],
+    correctAnswer: "氧氣",
+    explanation: "植物行光合作用時，葉綠體會吸收光能，將水和二氧化碳轉化為糖類，並釋放出氧氣。"
+  },
+  {
+    id: 8,
+    question: "在標準大氣壓下，水分子開始凝固或結冰的溫度（冰點）是？",
+    options: ["100 攝氏度", "0 攝氏度", "-10 攝氏度", "4 攝氏度"],
+    correctAnswer: "0 攝氏度",
+    explanation: "在標準大氣壓下，水的冰點定為攝氏 0 度，沸點則是攝氏 100 度。"
+  },
+  {
+    id: 9,
+    question: "世界著名畫作《蒙娜麗莎》是哪位文藝復興大師的代表作？",
+    options: ["米開朗基羅", "拉斐爾", "達文西", "畢卡索"],
+    correctAnswer: "達文西",
+    explanation: "《蒙娜麗莎》(Mona Lisa) 是義大利文藝復興時期巨匠李奧納多·達文西作於 16 世紀初的肖像繪畫傑作。"
+  },
+  {
+    id: 10,
+    question: "人類身體中，最大的排毒與代謝器官是什麼？",
+    options: ["心臟", "肝臟", "肺臟", "腎臟"],
+    correctAnswer: "肝臟",
+    explanation: "肝臟是人體最大、功能最複雜的實質性臟器，主導解毒、醣類代謝及蛋白質合成等多種重要生理程序。"
+  }
+];
+
 export default function Dashboard({
   currentUser,
   questionnaires,
@@ -77,7 +276,70 @@ export default function Dashboard({
   onUpdateCurrentUser
 }: DashboardProps) {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"analytics" | "submissions" | "survey_configs" | "rbac" | "profile" | "logs" | "system_accounts">("analytics");
+  const [activeTab, setActiveTab] = useState<string>(
+    currentUser.role === UserRole.RESPONDENT ? "respondent_game" : "analytics"
+  );
+
+  const canManageTriviaQuestions = 
+    currentUser.role === UserRole.WEBMASTER || 
+    currentUser.role === UserRole.SUPER_ADMIN || 
+    (currentUser.role === UserRole.QUESTION_CREATOR && currentUser.canManageTrivia === true);
+
+  // ================= RESPONDENT STATES =================
+  const [triviaIndex, setTriviaIndex] = useState(0);
+  const [selectedTriviaOption, setSelectedTriviaOption] = useState<string>("");
+  const [triviaIsCorrect, setTriviaIsCorrect] = useState<boolean | null>(null);
+
+  // Perks Interactive modals state
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const [disputeSurveyId, setDisputeSurveyId] = useState("");
+  const [disputeText, setDisputeText] = useState("");
+
+  const [showSuggestModal, setShowSuggestModal] = useState(false);
+  const [suggestSurveyId, setSuggestSurveyId] = useState("");
+  const [suggestQTitle, setSuggestQTitle] = useState("");
+  const [suggestQType, setSuggestQType] = useState<QuestionType>("SINGLE_CHOICE");
+  const [suggestQOptions, setSuggestQOptions] = useState<string[]>(["", ""]);
+
+  const [showStopModal, setShowStopModal] = useState(false);
+  const [stopSurveyId, setStopSurveyId] = useState("");
+  const [stopReason, setStopReason] = useState("");
+
+  const [showPromoFriendModal, setShowPromoFriendModal] = useState(false);
+  const [promoFriendName, setPromoFriendName] = useState("");
+  const [promoFriendType, setPromoFriendType] = useState<"T3" | "T5">("T3"); // T3 (白銀), T5 (白金)
+
+  const [showBanRequestModal, setShowBanRequestModal] = useState(false);
+  const [banReqTarget, setBanReqTarget] = useState("");
+  const [banReqReason, setBanReqReason] = useState("");
+
+  // Cheat Reporting States
+  const [showCheatReportModal, setShowCheatReportModal] = useState(false);
+  const [cheatReportTarget, setCheatReportTarget] = useState("");
+  const [cheatReportReason, setCheatReportReason] = useState("");
+  const [cheatReports, setCheatReports] = useState<any[]>([]);
+
+  // Account-Independent Survey Order state
+  const [surveyOrder, setSurveyOrder] = useState<string[]>(() => {
+    const saved = localStorage.getItem(`sub_survey_order_${currentUser.username}`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Stateful Trivia Questions loaded persistent from localStorage
+  const [triviaQuestions, setTriviaQuestions] = useState<any[]>(() => {
+    const saved = localStorage.getItem("sub_trivia_questions");
+    if (saved) return JSON.parse(saved);
+    return TRIVIA_QUESTIONS;
+  });
+
+  // New Trivia question form substate hooks
+  const [newTriviaQText, setNewTriviaQText] = useState("");
+  const [newTriviaOptA, setNewTriviaOptA] = useState("");
+  const [newTriviaOptB, setNewTriviaOptB] = useState("");
+  const [newTriviaOptC, setNewTriviaOptC] = useState("");
+  const [newTriviaOptD, setNewTriviaOptD] = useState("");
+  const [newTriviaCorrectLetter, setNewTriviaCorrectLetter] = useState("A");
+  const [newTriviaExplanation, setNewTriviaExplanation] = useState("");
 
   // Selection
   const [selectedSurveyId, setSelectedSurveyId] = useState<string>(questionnaires[0]?.id || "");
@@ -192,6 +454,15 @@ export default function Dashboard({
     }
   }, []);
 
+  useEffect(() => {
+    const saved = localStorage.getItem("global_cheat_reports");
+    if (saved) {
+      setCheatReports(JSON.parse(saved));
+    } else {
+      setCheatReports([]);
+    }
+  }, []);
+
   const addLog = (action: string, target: string, details: string) => {
     const roleString = currentUser.role === UserRole.WEBMASTER
       ? "系統站主"
@@ -201,7 +472,11 @@ export default function Dashboard({
       ? "系統管理員"
       : currentUser.role === UserRole.OPERATOR
       ? `操作員 (${currentUser.starLevel}星)`
-      : `分析員 (${currentUser.starLevel}星)`;
+      : currentUser.role === UserRole.ANALYST
+      ? `分析員 (${currentUser.starLevel}星)`
+      : currentUser.role === UserRole.QUESTION_CREATOR
+      ? `出題人 (${currentUser.starLevel || 1}階)`
+      : `答題人 (${currentUser.starLevel || 1}階)`;
 
     const newLogItem: AuditLog = {
       id: `log-${Date.now()}`,
@@ -223,6 +498,10 @@ export default function Dashboard({
 
     const targetSurvey = questionnaires.find(q => q.id === surveyId);
 
+    if (currentUser.role === UserRole.QUESTION_CREATOR) {
+      return targetSurvey ? targetSurvey.createdBy === currentUser.username : false;
+    }
+
     if (currentUser.role === UserRole.SYSTEM_ADMIN) {
       if (targetSurvey && targetSurvey.distributedToAdmins === false) {
         return false;
@@ -241,7 +520,170 @@ export default function Dashboard({
 
   // Determine current active survey
   const surveysToRender = accessibleQuestionnaires;
-  const currentSurvey = questionnaires.find(q => q.id === selectedSurveyId);
+  const currentSurvey = accessibleQuestionnaires.find(q => q.id === selectedSurveyId);
+
+  // Account-Independent custom order sorting
+  const getSortedQuestionnaires = (list: Questionnaire[]) => {
+    const orderMap = new Map<string, number>();
+    surveyOrder.forEach((id, idx) => {
+      orderMap.set(id, idx);
+    });
+
+    return [...list].sort((a, b) => {
+      const indexA = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999 + list.indexOf(a);
+      const indexB = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999 + list.indexOf(b);
+      return indexA - indexB;
+    });
+  };
+
+  const handleMoveSurveyLocal = (id: string, direction: "up" | "down") => {
+    const sortedList = getSortedQuestionnaires(accessibleQuestionnaires);
+    const index = sortedList.findIndex(q => q.id === id);
+    if (index === -1) return;
+    const targetIdx = direction === "up" ? index - 1 : index + 1;
+    if (targetIdx < 0 || targetIdx >= sortedList.length) return;
+
+    const newList = [...sortedList];
+    const temp = newList[index];
+    newList[index] = newList[targetIdx];
+    newList[targetIdx] = temp;
+
+    const newOrder = newList.map(q => q.id);
+    setSurveyOrder(newOrder);
+    localStorage.setItem(`sub_survey_order_${currentUser.username}`, JSON.stringify(newOrder));
+
+    addLog(
+      "調整自訂排序",
+      `排列次序變更: ${temp.title}`,
+      `用戶 ${currentUser.username} 移動了其個人專屬列表中問卷【${temp.title}】的排序位次。`
+    );
+  };
+
+  const handleToggleUserTriviaPrivilege = (targetUsername: string, isChecked: boolean) => {
+    const uList = { ...rbacUsers };
+    if (!uList[targetUsername]) return;
+
+    uList[targetUsername].canManageTrivia = isChecked;
+    localStorage.setItem("sub_users", JSON.stringify(uList));
+    setRbacUsers(uList);
+
+    if (targetUsername === currentUser.username) {
+      const updated = { ...currentUser, canManageTrivia: isChecked };
+      onUpdateCurrentUser(updated);
+      localStorage.setItem("sub_logged_user", JSON.stringify(updated));
+    }
+
+    addLog(
+      "指派特權",
+      `特權異動：${targetUsername}`,
+      `管理員將【${targetUsername}】「答題學知識題庫擴充」特權設定為：${isChecked ? "已開啟" : "已關閉"}`
+    );
+    alert(`🎉 已成功將帳號【${targetUsername}】的題庫擴充特權${isChecked ? "開啟授權" : "關閉收回"}！`);
+  };
+
+  const handleImportSuggestion = (surveyId: string, sug: any) => {
+    const updated = questionnaires.map(q => {
+      if (q.id === surveyId) {
+        const newQ: Question = {
+          id: `q-${Date.now()}`,
+          title: sug.title,
+          type: sug.type as QuestionType,
+          options: sug.options,
+          required: false,
+          minRating: 1,
+          maxRating: 5
+        };
+        const currentQuestions = q.questions || [];
+        const suggestions = (q as any).suggestions || [];
+        const nextSuggestions = suggestions.filter((s: any) => s.id !== sug.id);
+        
+        return {
+          ...q,
+          questions: [...currentQuestions, newQ],
+          suggestions: nextSuggestions
+        };
+      }
+      return q;
+    });
+
+    onUpdateQuestionnaires(updated);
+    addLog(
+      "採納市民薦題",
+      surveyId,
+      `採納並匯入了市民推薦的題目「${sug.title}」至問卷編號 [${surveyId}]`
+    );
+    alert("🎉 已成功採納市民薦題並匯入該問卷！題目已自動新增至問卷末尾！");
+  };
+
+  const handleRejectSuggestion = (surveyId: string, sugId: string) => {
+    const updated = questionnaires.map(q => {
+      if (q.id === surveyId) {
+        const suggestions = (q as any).suggestions || [];
+        const nextSuggestions = suggestions.filter((s: any) => s.id !== sugId);
+        return {
+          ...q,
+          suggestions: nextSuggestions
+        };
+      }
+      return q;
+    });
+    onUpdateQuestionnaires(updated);
+    alert("已忽略/清除此項市民推薦薦題。");
+  };
+
+  const handleAddNewTriviaQuestion = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTriviaQText.trim()) {
+      alert("⚠️ 請輸入問題題目文字！");
+      return;
+    }
+    if (!newTriviaOptA.trim() || !newTriviaOptB.trim() || !newTriviaOptC.trim() || !newTriviaOptD.trim()) {
+      alert("⚠️ 請填寫完整四個選項！");
+      return;
+    }
+
+    const options = [newTriviaOptA.trim(), newTriviaOptB.trim(), newTriviaOptC.trim(), newTriviaOptD.trim()];
+    let correctAnswer = options[0];
+    if (newTriviaCorrectLetter === "B") correctAnswer = options[1];
+    if (newTriviaCorrectLetter === "C") correctAnswer = options[2];
+    if (newTriviaCorrectLetter === "D") correctAnswer = options[3];
+
+    const nextId = triviaQuestions.length > 0 ? Math.max(...triviaQuestions.map((t: any) => t.id)) + 1 : 1;
+    const newQ = {
+      id: nextId,
+      question: newTriviaQText.trim(),
+      options,
+      correctAnswer,
+      explanation: newTriviaExplanation.trim() || "無補充電書解釋說明。"
+    };
+
+    const updated = [...triviaQuestions, newQ];
+    setTriviaQuestions(updated);
+    localStorage.setItem("sub_trivia_questions", JSON.stringify(updated));
+
+    addLog(
+      "擴充知識庫題目",
+      newQ.question.substring(0, 15) + "...",
+      `自主新增市民研習答題學知識學科題目一組，題號: ${nextId}`
+    );
+
+    alert("🎉 知識庫問題新增成功！");
+    setNewTriviaQText("");
+    setNewTriviaOptA("");
+    setNewTriviaOptB("");
+    setNewTriviaOptC("");
+    setNewTriviaOptD("");
+    setNewTriviaExplanation("");
+  };
+
+  const handleDeleteTriviaQuestion = (id: number) => {
+    if (confirm("確定要在知識題庫中徹底刪除此題嗎？這會立即對所有市民答題端生效。")) {
+      const updated = triviaQuestions.filter(t => t.id !== id);
+      setTriviaQuestions(updated);
+      localStorage.setItem("sub_trivia_questions", JSON.stringify(updated));
+      alert("已成功將該問題自知識題庫中移除！");
+    }
+  };
 
   // Auto-correct Selected Survey ID if access is lost or non-existent
   useEffect(() => {
@@ -250,9 +692,10 @@ export default function Dashboard({
     }
   }, [questionnaires, currentUser, selectedSurveyId]);
 
-  // Promote Apply center (Operator/Analyst can apply for promotion and choose target)
+  // Promote Apply center (Operator/Analyst/Creator can apply for promotion and choose target)
   const canApplyPromotion = (): boolean => {
     if (currentUser.role === UserRole.OPERATOR || currentUser.role === UserRole.ANALYST) return true;
+    if (currentUser.role === UserRole.QUESTION_CREATOR && (currentUser.starLevel || 1) < 3) return true;
     return false;
   };
 
@@ -263,32 +706,36 @@ export default function Dashboard({
       return;
     }
 
+    const resolvedTargetRole = currentUser.role === UserRole.QUESTION_CREATOR ? UserRole.QUESTION_CREATOR : promoTargetRole;
+    const resolvedTargetStar = currentUser.role === UserRole.QUESTION_CREATOR ? (promoTargetStar as StarLevel) : (promoTargetRole === UserRole.SYSTEM_ADMIN ? undefined : (promoTargetStar as StarLevel));
+
     const app: PromotionApplication = {
       id: `promo-${Date.now()}`,
       username: currentUser.username,
       currentRole: currentUser.role,
       currentStar: currentUser.starLevel,
-      targetRole: promoTargetRole,
-      targetStar: promoTargetRole === UserRole.SYSTEM_ADMIN ? undefined : (promoTargetStar as StarLevel),
+      targetRole: resolvedTargetRole,
+      targetStar: resolvedTargetStar,
       status: "PENDING",
       createdAt: new Date().toISOString().replace("T", " ").substring(0, 19)
     };
 
     onUpdatePromotions([app, ...promotions]);
+    
+    const targetString = resolvedTargetRole === UserRole.QUESTION_CREATOR
+      ? `出題人 (${resolvedTargetStar}階)`
+      : resolvedTargetRole === UserRole.RESPONDENT
+      ? `答題人 (${resolvedTargetStar}階)`
+      : resolvedTargetRole === UserRole.SYSTEM_ADMIN
+      ? "系統管理員"
+      : `${resolvedTargetRole === UserRole.OPERATOR ? "操作員" : "分析員"} (${resolvedTargetStar}星)`;
+
     addLog(
       "提出職級晉升申請",
       "用戶權限分級制度",
-      `${currentUser.username} 提出權限晉升申請，請求晉升為：${
-        promoTargetRole === UserRole.SYSTEM_ADMIN 
-          ? "系統管理員" 
-          : `${promoTargetRole === UserRole.OPERATOR ? "操作員" : "分析員"} (${promoTargetStar}星)`
-      }`
+      `${currentUser.username} 提出權限晉升申請，請求晉升為：${targetString}`
     );
-    alert(`🎉 您的晉升申請（期望職位: ${
-      promoTargetRole === UserRole.SYSTEM_ADMIN 
-        ? "系統管理員" 
-        : `${promoTargetRole === UserRole.OPERATOR ? "操作員" : "分析員"} (${promoTargetStar}星)`
-    }）已成功送出！將提報予超級管理員進行審批。`);
+    alert(`🎉 您的晉升申請（期望職位: ${targetString}）已成功送出！將提報予超級管理員進行審批。`);
     setShowPromoSelect(false);
   };
 
@@ -313,23 +760,489 @@ export default function Dashboard({
       }
     }
 
+    const roleString = app.targetRole === UserRole.QUESTION_CREATOR
+      ? `出題人 (${app.targetStar}階)`
+      : `${app.targetRole} (${app.targetStar || ""}星)`;
+
     addLog(
       "批准職級晉級申請",
       "核備人員: " + app.username,
-      `超級管理員核准了 ${app.username} 的申請。角色地位轉換為: ${app.targetRole} (${app.targetStar || ""}星)`
+      `超級管理員核准了 ${app.username} 的申請。角色地位轉換為: ${roleString}`
     );
-    alert(`已批准 ${app.username} 的晉級申請！階級設定已同步更新。`);
+    alert(`已批准 ${app.username} 的晉級申請！階級設定已同步更新為 ${roleString}。`);
   };
 
   // Reject Promotion
   const handleRejectPromo = (app: PromotionApplication) => {
     const updatedApps = promotions.map(p => p.id === app.id ? { ...p, status: "REJECTED" } as const : p);
     onUpdatePromotions(updatedApps);
+
     addLog(
-      "否決職級晉級申請",
-      "駁回人員: " + app.username,
-      `超級管理員駁回了 ${app.username} 的晉級申請項目。`
+      "駁回職級晉級申請",
+      "核備人員: " + app.username,
+      `超級管理員駁回了 ${app.username} 的晉級申請。`
     );
+    alert(`已駁回 ${app.username} 的晉級申請。`);
+  };
+
+  // ================= RESPONDENT ACTIONS & PERKS LOGIC =================
+  const handleTriviaAnswerSubmit = () => {
+    if (!selectedTriviaOption) {
+      alert("⚠️ 請先選擇一個答案選項！");
+      return;
+    }
+    const currentQ = triviaQuestions[triviaIndex];
+    if (!currentQ) {
+      alert("⚠️ 題庫中目前沒有更多題目！");
+      return;
+    }
+    const isCorrect = selectedTriviaOption === currentQ.correctAnswer;
+    
+    setTriviaIsCorrect(isCorrect);
+    
+    if (isCorrect) {
+      const currentPts = currentUser.respondentPoints || 0;
+      const newPts = currentPts + 20;
+
+      const storedUsers = localStorage.getItem("sub_users");
+      if (storedUsers) {
+        const uList = JSON.parse(storedUsers);
+        if (uList[currentUser.username]) {
+          uList[currentUser.username].respondentPoints = newPts;
+          
+          const rankInfo = calculateRespondentRank(newPts);
+          uList[currentUser.username].starLevel = rankInfo.tier;
+          
+          localStorage.setItem("sub_users", JSON.stringify(uList));
+          setRbacUsers(uList);
+          
+          if (onUpdateCurrentUser) {
+            onUpdateCurrentUser({
+              ...currentUser,
+              respondentPoints: newPts,
+              starLevel: rankInfo.tier as StarLevel
+            });
+          }
+        }
+      }
+
+      addLog(
+        "答題闖關成功",
+        `題目: ${currentQ.question}`,
+        `答題人答對並獲得 20 點積分。當前總積分: ${newPts} 點`
+      );
+      alert(`🎉 答對囉！太棒了！獲得 20 點積分！\n解析：${currentQ.explanation}`);
+    } else {
+      addLog(
+        "答題闖關失敗",
+        `題目: ${currentQ.question}`,
+        `答題人答錯，選擇了：${selectedTriviaOption}`
+      );
+      alert(`❌ 答錯囉，要再試一次嗎？你可以重新選擇答案！\n提示：提示就在選項中。`);
+    }
+  };
+
+  const nextTriviaQuestion = () => {
+    setTriviaIndex((prev) => (prev + 1) % (triviaQuestions.length || 1));
+    setSelectedTriviaOption("");
+    setTriviaIsCorrect(null);
+  };
+
+  // Promote a friend's account directly
+  const handlePromoFriendSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const friend = promoFriendName.trim().toLowerCase();
+    
+    if (!friend) {
+      alert("⚠️ 請輸入朋友的帳號名稱！");
+      return;
+    }
+    if (friend === currentUser.username.toLowerCase()) {
+      alert("⚠️ 您不能直接晉升自己的帳號！");
+      return;
+    }
+
+    const storedUsers = localStorage.getItem("sub_users");
+    if (!storedUsers) return;
+    const uList = JSON.parse(storedUsers);
+    
+    if (!uList[friend]) {
+      alert(`⚠️ 找不到此帳號「${friend}」！請確認無拼寫錯誤，且朋友已註冊登入過。`);
+      return;
+    }
+
+    const friendObj = uList[friend];
+    if (friendObj.role === UserRole.WEBMASTER || friendObj.role === UserRole.SUPER_ADMIN || friendObj.role === UserRole.SYSTEM_ADMIN) {
+      alert("⚠️ 您的朋友已經是高階管理人員，無須提升答題等階！");
+      return;
+    }
+
+    const selfRank = calculateRespondentRank(currentUser.respondentPoints || 0);
+
+    if (promoFriendType === "T3") {
+      // Direct silver promotion (starts at 360 points = 18 questions = Silver IV)
+      const maxQuota = selfRank.tier === 7 ? 15 : 4;
+      const currentPromoCount = currentUser.promotedFriendsThisMonthCount_T3 || 0;
+      
+      if (currentPromoCount >= maxQuota) {
+        alert(`⚠️ 您本月的 3 階 (白銀) 晉升額度 (${maxQuota} 次) 已達上限囉！`);
+        return;
+      }
+
+      // Update friend
+      uList[friend].role = UserRole.RESPONDENT;
+      uList[friend].respondentPoints = Math.max(uList[friend].respondentPoints || 0, 360);
+      uList[friend].starLevel = 3;
+
+      // Update self quota
+      uList[currentUser.username].promotedFriendsThisMonthCount_T3 = currentPromoCount + 1;
+      
+      localStorage.setItem("sub_users", JSON.stringify(uList));
+      setRbacUsers(uList);
+      
+      if (onUpdateCurrentUser) {
+        onUpdateCurrentUser({
+          ...currentUser,
+          promotedFriendsThisMonthCount_T3: currentPromoCount + 1
+        });
+      }
+
+      addLog(
+         "特權：直接晉升朋友(3階)",
+         friend,
+         `鑽石/傳奇級答題人提升其朋友 ${friend} 至白銀階級(3階)。當月使用次數: ${currentPromoCount + 1}/${maxQuota}`
+      );
+      alert(`🎉 成功！已將朋友 ${friend} 帳號直接提拔為 3 階白銀答題人！`);
+    } else {
+      // Direct platinum promotion (starts at 1000 points = 50 questions = Platinum V)
+      if (selfRank.tier < 7) {
+        alert("⚠️ 只有 7 階傳奇等階才能享有幫助朋友晉級 5 階 (白金) 的特權！");
+        return;
+      }
+      
+      const currentPromoWeekCount = currentUser.promotedFriendsThisWeekCount_T5 || 0;
+      if (currentPromoWeekCount >= 2) {
+        alert("⚠️ 您本週的 5 階 (白金) 晉升極致額度 (2 次) 已經額滿囉！");
+        return;
+      }
+
+      uList[friend].role = UserRole.RESPONDENT;
+      uList[friend].respondentPoints = Math.max(uList[friend].respondentPoints || 0, 1000);
+      uList[friend].starLevel = 5;
+
+      uList[currentUser.username].promotedFriendsThisWeekCount_T5 = currentPromoWeekCount + 1;
+
+      localStorage.setItem("sub_users", JSON.stringify(uList));
+      setRbacUsers(uList);
+
+      if (onUpdateCurrentUser) {
+        onUpdateCurrentUser({
+          ...currentUser,
+          promotedFriendsThisWeekCount_T5: currentPromoWeekCount + 1
+        });
+      }
+
+      addLog(
+         "特權：直接晉升朋友(5階)",
+         friend,
+         `傳奇等階答題人將朋友 ${friend} 直接拔擢至白金階級(5階)。本週使用次數: ${currentPromoWeekCount + 1}/2`
+      );
+      alert(`⚡ 傳奇神威！已將朋友 ${friend} 帳號直接提拔為 5 階白金等級！`);
+    }
+
+    setPromoFriendName("");
+    setShowPromoFriendModal(false);
+  };
+
+  // Submit dispute (Tier 2+)
+  const handleDisputeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!disputeSurveyId) {
+      alert("⚠️ 請選擇一個您要置疑其題目的問卷！");
+      return;
+    }
+    if (!disputeText.trim()) {
+      alert("⚠️ 請輸入具體的題目爭議/置疑說明！");
+      return;
+    }
+
+    const updated = questionnaires.map(q => {
+      if (q.id === disputeSurveyId) {
+        const itemDisputes = q.disputes || [];
+        return {
+          ...q,
+          disputes: [
+            ...itemDisputes,
+            {
+              id: `disp-${Date.now()}`,
+              username: currentUser.username,
+              reason: disputeText.trim(),
+              timestamp: new Date().toISOString().replace("T", " ").substring(0, 19)
+            }
+          ]
+        };
+      }
+      return q;
+    });
+
+    onUpdateQuestionnaires(updated);
+    addLog(
+      "對出題人題目發出置疑",
+      disputeSurveyId,
+      `答題人針對問卷 [${disputeSurveyId}] 發出申訴置疑：${disputeText.trim()}`
+    );
+
+    alert("🎉 置疑送出成功！出題人將在他們的問卷後台與回收數據庫中檢視本條置疑提報。");
+    setDisputeText("");
+    setShowDisputeModal(false);
+  };
+
+  // Submit suggest question (Tier 4+)
+  const handleSuggestQSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!suggestSurveyId) {
+      alert("⚠️ 請選取建議增設題目的問卷！");
+      return;
+    }
+    if (!suggestQTitle.trim()) {
+      alert("⚠️ 請輸入建議的題目文字！");
+      return;
+    }
+
+    const updated = questionnaires.map(q => {
+      if (q.id === suggestSurveyId) {
+        const suggestions = (q as any).suggestions || [];
+        return {
+          ...q,
+          suggestions: [
+            ...suggestions,
+            {
+              id: `sug-${Date.now()}`,
+              author: currentUser.username,
+              title: suggestQTitle.trim(),
+              type: suggestQType,
+              options: suggestQOptions.filter(Boolean),
+              createdAt: new Date().toISOString().replace("T", " ").substring(0, 19)
+            }
+          ]
+        };
+      }
+      return q;
+    });
+
+    onUpdateQuestionnaires(updated);
+    addLog(
+      "協助出題：設計題目推薦",
+      suggestSurveyId,
+      `答題人協助出題，向問卷 [${suggestSurveyId}] 推薦增設題目「${suggestQTitle.trim()}」`
+    );
+
+    alert("🎉 建議題目提報成功！出題人可以直接在設置頁面內一鍵核對並匯入您所撰寫的題目！");
+    setSuggestQTitle("");
+    setSuggestQOptions(["", ""]);
+    setShowSuggestModal(false);
+  };
+
+  // Apply to stop questionnaire (Tier 5+)
+  const handleStopSurveySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stopSurveyId) {
+      alert("⚠️ 請選取欲提報停用的問卷！");
+      return;
+    }
+    if (!stopReason.trim()) {
+      alert("⚠️ 請輸入提報停用的正當法律/資安/侵權理由！");
+      return;
+    }
+
+    const updated = questionnaires.map(q => {
+      if (q.id === stopSurveyId) {
+        const stops = (q as any).stopApplied || [];
+        return {
+          ...q,
+          stopApplied: [
+            ...stops,
+            {
+              id: `stopapp-${Date.now()}`,
+              user: currentUser.username,
+              reason: stopReason.trim(),
+              createdAt: new Date().toISOString().replace("T", " ").substring(0, 19)
+            }
+          ]
+        };
+      }
+      return q;
+    });
+
+    onUpdateQuestionnaires(updated);
+    addLog(
+      "提請管理員封禁停用問卷",
+      stopSurveyId,
+      `答題人提請停用問卷 [${stopSurveyId}]，理由：${stopReason.trim()}`
+    );
+
+    alert("🎉 停用申請提報成功！管理員與系統站主將會收到此高權限警訊並優先審查此問卷！");
+    setStopReason("");
+    setShowStopModal(false);
+  };
+
+  // Submit ban request (Tier 7+)
+  const handleBanOtherSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = banReqTarget.trim().toLowerCase();
+    if (!target) {
+      alert("⚠️ 請輸入欲申訴封鎖的對象帳號名稱！");
+      return;
+    }
+    if (target === currentUser.username.toLowerCase()) {
+      alert("⚠️ 您不能申請封鎖自己的帳號！");
+      return;
+    }
+    if (!banReqReason.trim()) {
+      alert("⚠️ 請輸入合理的帳號舉報封禁理由！");
+      return;
+    }
+
+    const currentBanAppliedCount = currentUser.bannedOtherAppliedThisMonthCount || 0;
+    if (currentBanAppliedCount >= 4) {
+      alert("⚠️ 您本月的封鎖舉報額度已達上限（每月最多 4 次）！");
+      return;
+    }
+
+    const storedUsers = localStorage.getItem("sub_users");
+    if (!storedUsers) return;
+    const uList = JSON.parse(storedUsers);
+    if (!uList[target]) {
+      alert(`⚠️ 系統找不到名為「${target}」的活動帳戶，請重新確認！`);
+      return;
+    }
+
+    // Save self quota count increment
+    uList[currentUser.username].bannedOtherAppliedThisMonthCount = currentBanAppliedCount + 1;
+    
+    // Save request to global request registry for admin attention
+    const banReqs = JSON.parse(localStorage.getItem("global_ban_requests") || "[]");
+    banReqs.push({
+      id: `banreq-${Date.now()}`,
+      requester: currentUser.username,
+      target: target,
+      reason: banReqReason.trim(),
+      status: "PENDING",
+      createdAt: new Date().toISOString().replace("T", " ").substring(0, 19)
+    });
+    localStorage.setItem("global_ban_requests", JSON.stringify(banReqs));
+
+    localStorage.setItem("sub_users", JSON.stringify(uList));
+    setRbacUsers(uList);
+
+    if (onUpdateCurrentUser) {
+      onUpdateCurrentUser({
+        ...currentUser,
+        bannedOtherAppliedThisMonthCount: currentBanAppliedCount + 1
+      });
+    }
+
+    addLog(
+      "特權：向站主提請封其帳號",
+      target,
+      `傳奇級答題人舉報並請求封鎖帳號 [${target}]。本月累計次數: ${currentBanAppliedCount + 1}/4`
+    );
+
+    alert(`🎉 帳號舉報成功！站主已接獲名為「${target}」的危害警舉通報（剩餘額度: ${3 - currentBanAppliedCount} 次）。`);
+    setBanReqTarget("");
+    setBanReqReason("");
+    setShowBanRequestModal(false);
+  };
+
+  // Submit cheat suspicion report (Any Respondent)
+  const handleCheatReportSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = cheatReportTarget.trim().toLowerCase();
+    if (!target) {
+      alert("⚠️ 請選取被檢舉者帳號名稱！");
+      return;
+    }
+    if (target === currentUser.username.toLowerCase()) {
+      alert("⚠️ 您不能檢舉自己！");
+      return;
+    }
+    if (!cheatReportReason.trim()) {
+      alert("⚠️ 請輸入合理的帳號舉報封禁理由！");
+      return;
+    }
+
+    const storedUsers = localStorage.getItem("sub_users");
+    if (!storedUsers) return;
+    const uList = JSON.parse(storedUsers);
+    if (!uList[target]) {
+      alert(`⚠️ 系統找不到名為「${target}」的活動帳戶，請重新確認！`);
+      return;
+    }
+
+    const savedReports = JSON.parse(localStorage.getItem("global_cheat_reports") || "[]");
+    const newReport = {
+      id: `cheat-${Date.now()}`,
+      reporter: currentUser.username,
+      target: target,
+      reason: cheatReportReason.trim(),
+      status: "PENDING",
+      createdAt: new Date().toISOString().replace("T", " ").substring(0, 19)
+    };
+    savedReports.push(newReport);
+    localStorage.setItem("global_cheat_reports", JSON.stringify(savedReports));
+    setCheatReports(savedReports);
+
+    addLog(
+      "舉報市民開掛嫌疑",
+      target,
+      `${currentUser.username} 提交了對答題人 [${target}] 的開掛疑似嫌疑舉報。事由：${cheatReportReason.trim()}`
+    );
+
+    alert(`🎉 舉報成功！站主與管理員已收到對「${target}」的開掛、作弊等不當行為通報，我們將儘速查辦。`);
+    setCheatReportTarget("");
+    setCheatReportReason("");
+    setShowCheatReportModal(false);
+  };
+
+  // Process cheat suspicion report (Admin/Webmaster)
+  const handleCheatReportAction = (reportId: string, action: "BAN" | "DISMISS") => {
+    const saved = localStorage.getItem("global_cheat_reports");
+    if (!saved) return;
+    let list = JSON.parse(saved);
+    const repObj = list.find((r: any) => r.id === reportId);
+    if (!repObj) return;
+
+    if (action === "BAN") {
+      const storedUsers = localStorage.getItem("sub_users");
+      if (storedUsers) {
+        const uList = JSON.parse(storedUsers);
+        if (uList[repObj.target]) {
+          uList[repObj.target].banned = true;
+          uList[repObj.target].bannedBy = currentUser.role;
+          localStorage.setItem("sub_users", JSON.stringify(uList));
+          setRbacUsers(uList);
+
+          addLog(
+            "封禁涉嫌開掛人員",
+            repObj.target,
+            `管理員審核 ${repObj.reporter} 的舉報案件：證實開掛，對「${repObj.target}」實施永久系統停用封鎖！`
+          );
+          alert(`🎉 證實開掛，已成功將帳號「${repObj.target}」永久封禁註銷！`);
+        }
+      }
+      repObj.status = "APPROVED_BAN";
+    } else {
+      addLog(
+        "駁回開掛疑似通報",
+        repObj.target,
+        `管理員審核 ${repObj.reporter} 的舉報案件：查無實據，駁回該項開掛嫌疑不法通報。`
+      );
+      repObj.status = "DISMISSED";
+      alert(`已成功駁回此無效通報。`);
+    }
+
+    localStorage.setItem("global_cheat_reports", JSON.stringify(list));
+    setCheatReports(list);
   };
 
   // Modify individual's own username (姓名/帳號名稱) for all accounts
@@ -553,7 +1466,8 @@ export default function Dashboard({
       querySystems: [],
       emailNotificationEnabled: newSurveyEmail,
       questions: newSurveyQs,
-      distributedToAdmins: newSurveyDistributedToAdmins
+      distributedToAdmins: newSurveyDistributedToAdmins,
+      createdBy: currentUser.username
     };
 
     const updated = [...questionnaires, nSurvey];
@@ -664,6 +1578,10 @@ export default function Dashboard({
 
   // Delete/Remove query subsystem
   const handleDeleteQuerySubsystem = (surveyId: string, queryId: string, qName: string) => {
+    if (currentUser.role === UserRole.QUESTION_CREATOR && currentUser.starLevel < 3) {
+      alert("⚠️ 您的出題人等階尚未達到 3 階，無權下線刪除子查詢系統！");
+      return;
+    }
     if (confirm(`確定要移除「${qName}」子查詢系統嗎？`)) {
       const updated = questionnaires.map(q => {
         if (q.id === surveyId) {
@@ -810,6 +1728,11 @@ export default function Dashboard({
 
     const currentBanState = !!uList[targetUser].banned;
     uList[targetUser].banned = !currentBanState;
+    if (uList[targetUser].banned) {
+      uList[targetUser].bannedBy = currentUser.role;
+    } else {
+      delete uList[targetUser].bannedBy;
+    }
 
     localStorage.setItem("sub_users", JSON.stringify(uList));
     setRbacUsers(uList);
@@ -853,9 +1776,23 @@ export default function Dashboard({
     uList[targetUsername].role = newRole;
 
     // reset or setup stars/assignedTables correctly
-    if (newRole === UserRole.SYSTEM_ADMIN || newRole === UserRole.SUPER_ADMIN || newRole === UserRole.WEBMASTER) {
-      uList[targetUsername].starLevel = undefined;
+    if (
+      newRole === UserRole.SYSTEM_ADMIN ||
+      newRole === UserRole.SUPER_ADMIN ||
+      newRole === UserRole.WEBMASTER ||
+      newRole === UserRole.QUESTION_CREATOR ||
+      newRole === UserRole.RESPONDENT
+    ) {
       uList[targetUsername].assignedTables = [];
+      if (
+        newRole === UserRole.SYSTEM_ADMIN ||
+        newRole === UserRole.SUPER_ADMIN ||
+        newRole === UserRole.WEBMASTER
+      ) {
+        uList[targetUsername].starLevel = undefined;
+      } else {
+        uList[targetUsername].starLevel = uList[targetUsername].starLevel || 1;
+      }
     } else {
       uList[targetUsername].starLevel = uList[targetUsername].starLevel || 1;
       uList[targetUsername].assignedTables = uList[targetUsername].assignedTables || [];
@@ -863,6 +1800,17 @@ export default function Dashboard({
 
     localStorage.setItem("sub_users", JSON.stringify(uList));
     setRbacUsers(uList);
+
+    if (targetUsername === currentUser.username) {
+      const updated = { 
+        ...currentUser, 
+        role: newRole, 
+        starLevel: uList[targetUsername].starLevel, 
+        assignedTables: uList[targetUsername].assignedTables 
+      };
+      onUpdateCurrentUser(updated);
+      localStorage.setItem("sub_logged_user", JSON.stringify(updated));
+    }
 
     addLog(
       "站主調整身分職級",
@@ -872,7 +1820,9 @@ export default function Dashboard({
     alert(`🎉 帳號 ${targetUsername} 的身分角色已成功調升/調整為【${
       newRole === UserRole.SUPER_ADMIN ? "超級管理員" :
       newRole === UserRole.SYSTEM_ADMIN ? "系統管理員" :
-      newRole === UserRole.OPERATOR ? "操作員" : "分析員"
+      newRole === UserRole.OPERATOR ? "操作員" :
+      newRole === UserRole.ANALYST ? "分析員" :
+      newRole === UserRole.QUESTION_CREATOR ? "出題人" : "答題人"
     }】！`);
   };
 
@@ -891,6 +1841,16 @@ export default function Dashboard({
 
     localStorage.setItem("sub_users", JSON.stringify(uList));
     setRbacUsers(uList);
+
+    if (targetUsername === currentUser.username) {
+      const updated = { 
+        ...currentUser, 
+        starLevel: newStar as StarLevel, 
+        assignedTables: uList[targetUsername].assignedTables 
+      };
+      onUpdateCurrentUser(updated);
+      localStorage.setItem("sub_logged_user", JSON.stringify(updated));
+    }
 
     addLog(
       "站主異動授權星等",
@@ -1169,7 +2129,9 @@ export default function Dashboard({
                   currentUser.role === UserRole.SUPER_ADMIN ? "超級管理員 👑" :
                   currentUser.role === UserRole.SYSTEM_ADMIN ? "系統管理員 🛡️" :
                   currentUser.role === UserRole.OPERATOR ? `操作員 ${currentUser.starLevel}星 ⭐` :
-                  `分析員 ${currentUser.starLevel}星 📊`
+                  currentUser.role === UserRole.ANALYST ? `分析員 ${currentUser.starLevel}星 📊` :
+                  currentUser.role === UserRole.QUESTION_CREATOR ? `出題人 ${currentUser.starLevel || 1}階 📝` :
+                  `答題人 ${currentUser.starLevel || 1}階 ✍️`
                 })
               </span>
             </p>
@@ -1182,7 +2144,18 @@ export default function Dashboard({
             {canApplyPromotion() && (
               <button
                 id="dash-apply-upgrade-btn"
-                onClick={() => setShowPromoSelect(prev => !prev)}
+                onClick={() => {
+                  if (!showPromoSelect) {
+                    if (currentUser.role === UserRole.QUESTION_CREATOR) {
+                      setPromoTargetRole(UserRole.QUESTION_CREATOR);
+                      setPromoTargetStar(Math.min((currentUser.starLevel || 1) + 1, 3));
+                    } else {
+                      setPromoTargetRole(UserRole.OPERATOR);
+                      setPromoTargetStar(1);
+                    }
+                  }
+                  setShowPromoSelect(prev => !prev);
+                }}
                 className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-100 flex items-center space-x-1.5 transition-all cursor-pointer cursor-emerald"
               >
                 <ArrowUpCircle className="w-4 h-4 animate-bounce" />
@@ -1213,24 +2186,46 @@ export default function Dashboard({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-500 block">期望晉升職位</label>
-                  <select 
-                    value={promoTargetRole} 
-                    onChange={(e) => {
-                      const r = e.target.value as UserRole;
-                      setPromoTargetRole(r);
-                      if (r === UserRole.SYSTEM_ADMIN) {
-                        setPromoTargetStar(1);
-                      }
-                    }}
-                    className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-sans text-slate-700 font-semibold"
-                  >
-                    <option value={UserRole.OPERATOR}>操作員 (Operator)</option>
-                    <option value={UserRole.ANALYST}>分析員 (Analyst)</option>
-                    <option value={UserRole.SYSTEM_ADMIN}>系統管理員 (System Admin)</option>
-                  </select>
+                  {currentUser.role === UserRole.QUESTION_CREATOR ? (
+                    <select
+                      value={UserRole.QUESTION_CREATOR}
+                      disabled
+                      className="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-xs font-sans text-slate-500 font-semibold cursor-not-allowed"
+                    >
+                      <option value={UserRole.QUESTION_CREATOR}>出題人 (Question Creator)</option>
+                    </select>
+                  ) : (
+                    <select 
+                      value={promoTargetRole} 
+                      onChange={(e) => {
+                        const r = e.target.value as UserRole;
+                        setPromoTargetRole(r);
+                        if (r === UserRole.SYSTEM_ADMIN) {
+                          setPromoTargetStar(1);
+                        }
+                      }}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-sans text-slate-700 font-semibold"
+                    >
+                      <option value={UserRole.OPERATOR}>操作員 (Operator)</option>
+                      <option value={UserRole.ANALYST}>分析員 (Analyst)</option>
+                      <option value={UserRole.SYSTEM_ADMIN}>系統管理員 (System Admin)</option>
+                    </select>
+                  )}
                 </div>
 
-                {(promoTargetRole === UserRole.OPERATOR || promoTargetRole === UserRole.ANALYST) ? (
+                {currentUser.role === UserRole.QUESTION_CREATOR ? (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 block">期望核准等級</label>
+                    <select 
+                      value={promoTargetStar} 
+                      onChange={(e) => setPromoTargetStar(Number(e.target.value))}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-mono font-bold text-amber-600"
+                    >
+                      {(currentUser.starLevel || 1) < 2 && <option value={2}>⭐⭐ 2 階 (可創並修改問卷)</option>}
+                      <option value={3}>⭐⭐⭐ 3 階 (可刪除與進階管理)</option>
+                    </select>
+                  </div>
+                ) : (promoTargetRole === UserRole.OPERATOR || promoTargetRole === UserRole.ANALYST) ? (
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-500 block">期望核准等級</label>
                     <select 
@@ -1272,24 +2267,44 @@ export default function Dashboard({
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden p-4 space-y-1.5">
             <span className="text-[10px] font-bold text-slate-400 block px-3 uppercase tracking-wider mb-2">管理控制選單</span>
 
-            <button
-              id="tab-btn-analytics"
-              onClick={() => setActiveTab("analytics")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === "analytics"
-                  ? "bg-slate-900 text-white"
-                  : "text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <PieChart className="w-4 h-4" />
-                <span>📊 問卷統計與分析</span>
-              </div>
-              <ChevronRight className="w-3 h-3 opacity-60" />
-            </button>
+            {currentUser.role === UserRole.RESPONDENT && (
+              <button
+                id="tab-btn-respondent-game"
+                onClick={() => setActiveTab("respondent_game")}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === "respondent_game"
+                    ? "bg-slate-900 text-white"
+                    : "text-indigo-600 hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex items-center space-x-2">
+                  <Trophy className="w-4 h-4 text-amber-500 animate-bounce" />
+                  <span>🎮 答題闖關賺積分</span>
+                </div>
+                <ChevronRight className="w-3 h-3 opacity-60" />
+              </button>
+            )}
 
-            {/* Operator and Administrator can see / edit submissions list */}
-            {currentUser.role !== UserRole.ANALYST && (
+            {currentUser.role !== UserRole.RESPONDENT && (
+              <button
+                id="tab-btn-analytics"
+                onClick={() => setActiveTab("analytics")}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === "analytics"
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex items-center space-x-2">
+                  <PieChart className="w-4 h-4" />
+                  <span>📊 問卷統計與分析</span>
+                </div>
+                <ChevronRight className="w-3 h-3 opacity-60" />
+              </button>
+            )}
+
+            {/* Operator, Creator, and Administrator can see / edit submissions list */}
+            {currentUser.role !== UserRole.RESPONDENT && currentUser.role !== UserRole.ANALYST && (
               <button
                 id="tab-btn-submissions"
                 onClick={() => setActiveTab("submissions")}
@@ -1307,8 +2322,8 @@ export default function Dashboard({
               </button>
             )}
 
-            {/* Config center: restricted to System/Super Admin/Webmaster */}
-            {(currentUser.role === UserRole.WEBMASTER || currentUser.role === UserRole.SUPER_ADMIN || currentUser.role === UserRole.SYSTEM_ADMIN) && (
+            {/* Config center: open to all non-respondents to sort or configure their questionnaires */}
+            {currentUser.role !== UserRole.RESPONDENT && (
               <button
                 id="tab-btn-survey-configs"
                 onClick={() => setActiveTab("survey_configs")}
@@ -1326,8 +2341,27 @@ export default function Dashboard({
               </button>
             )}
 
+            {/* Trivia questions control center selection */}
+            {canManageTriviaQuestions && (
+              <button
+                id="tab-btn-trivia-questions"
+                onClick={() => setActiveTab("trivia_questions")}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === "trivia_questions"
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex items-center space-x-2">
+                  <BookOpen className="w-4 h-4 text-indigo-500 animate-pulse" />
+                  <span>📚 答題學知識題庫管理</span>
+                </div>
+                <ChevronRight className="w-3 h-3 opacity-60" />
+              </button>
+            )}
+
             {/* RBAC user center: restricted to Super Admin or Webmaster only */}
-            {(currentUser.role === UserRole.WEBMASTER || currentUser.role === UserRole.SUPER_ADMIN) && (
+            {currentUser.role !== UserRole.RESPONDENT && (currentUser.role === UserRole.WEBMASTER || currentUser.role === UserRole.SUPER_ADMIN) && (
               <button
                 id="tab-btn-rbac"
                 onClick={() => setActiveTab("rbac")}
@@ -1350,7 +2384,7 @@ export default function Dashboard({
             )}
 
             {/* System Account Management: restricted to Webmaster only */}
-            {currentUser.role === UserRole.WEBMASTER && (
+            {currentUser.role !== UserRole.RESPONDENT && currentUser.role === UserRole.WEBMASTER && (
               <button
                 id="tab-btn-system-accounts"
                 onClick={() => setActiveTab("system_accounts")}
@@ -1427,6 +2461,772 @@ export default function Dashboard({
 
         {/* Tab content area */}
         <div className="lg:col-span-3">
+
+          {/* TAB 0: Respondent Gamified Portal */}
+          {activeTab === "respondent_game" && (
+            <div className="space-y-6 font-sans">
+              {/* Rank Dashboard Card */}
+              {(() => {
+                const rank = calculateRespondentRank(currentUser.respondentPoints || 0);
+                const nextRequired = rank.nextRankQuestionsNeeded;
+                const progressPct = Math.min(((rank.points % 20) / 20) * 100, 100);
+                
+                return (
+                  <div className="bg-gradient-to-br from-slate-900 to-indigo-950 rounded-3xl p-6 text-white shadow-xl space-y-6 relative overflow-hidden">
+                    {/* Decorative Background Glows */}
+                    <div className="absolute right-0 top-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl -z-0"></div>
+                    <div className="absolute left-1/3 bottom-0 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl -z-0"></div>
+
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 z-10 relative">
+                      <div className="space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 text-[10px] font-black px-2.5 py-0.5 rounded-full shadow-sm">
+                            LEVEL {rank.tier}
+                          </span>
+                          <span className="text-indigo-200 text-xs font-mono font-bold">
+                            RESPONDENT PORTAL
+                          </span>
+                        </div>
+                        <h2 className="text-2xl font-black tracking-tight flex items-center space-x-2">
+                          <span>{rank.tierName === "傳奇" ? "👑 傳奇段位" : `🏆 ${rank.tierName}階`}</span>
+                          {rank.subRank && <span className="text-amber-400 font-mono text-xl ml-1">{rank.subRank}</span>}
+                        </h2>
+                        <p className="text-slate-300 text-xs">
+                          已解鎖答題量：<span className="text-white font-bold">{rank.questionsCount} 題</span>
+                          {" · "}當前總積分：<span className="text-amber-300 font-extrabold font-mono text-sm">{rank.points}</span> 點 (每 20 點兌 1 題)
+                        </p>
+                      </div>
+
+                      <div className="bg-white/10 rounded-2xl p-4.5 border border-white/10 shrink-0 text-right backdrop-blur-sm">
+                        <span className="text-[10px] text-indigo-200 uppercase tracking-widest font-bold font-mono text-xs">下一級進度</span>
+                        <div className="text-xl font-black font-mono text-amber-300 mt-0.5">
+                          {rank.tierName === "傳奇" ? "MAX" : `差 ${nextRequired} 題晉級`}
+                        </div>
+                        <p className="text-[10px] text-slate-300">
+                          {rank.tierName === "傳奇" ? "積分無上限" : `當前答題進度`}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="space-y-1.5 z-10 relative">
+                      <div className="flex justify-between text-[10px] font-mono text-slate-300 font-semibold">
+                        <span>目前轉換進度: {rank.points % 20} / 20 點 (20點兌換為1答題權限)</span>
+                        <span>{Math.round(progressPct)}%</span>
+                      </div>
+                      <div className="h-2.5 bg-white/10 rounded-full overflow-hidden border border-white/5 p-0.5">
+                        <div 
+                          className="h-full bg-gradient-to-r from-indigo-400 to-amber-400 rounded-full transition-all duration-500 ease-out" 
+                          style={{ width: `${progressPct}%` }}
+                        ></div>
+                      </div>
+                    </div>
+
+                    {/* Perks Section */}
+                    <div className="border-t border-white/10 pt-5 space-y-3 z-10 relative">
+                      <h3 className="text-xs font-extrabold tracking-wider text-indigo-200 uppercase flex items-center space-x-1.5">
+                        <Sparkles className="w-4 h-4 text-amber-400" />
+                        <span>已解鎖階級對等特權 操作面板</span>
+                      </h3>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        {/* Perk 1 (Tier 1+) */}
+                        <div className="bg-white/5 border border-white/5 rounded-xl p-3 flex flex-col justify-between hover:bg-white/10 transition-all text-left">
+                          <div>
+                            <span className="text-[10px] text-slate-400 font-mono block">1階 黑鐵解鎖</span>
+                            <span className="text-xs font-extrabold block text-white mt-0.5">🎮 常規自主答題闖關</span>
+                            <span className="text-[10px] text-slate-350 leading-tight block mt-1">
+                              可全天候在線進行答題挑戰，答對一律加 20 積分，答錯可重選。
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const elem = document.getElementById("trivia-playground-card");
+                              if (elem) elem.scrollIntoView({ behavior: "smooth" });
+                            }}
+                            className="w-full text-center mt-3 py-1 bg-white/10 rounded text-[10px] font-bold text-white hover:bg-white/20 duration-150 cursor-pointer"
+                          >
+                            立即去答題 ➔
+                          </button>
+                        </div>
+
+                        {/* Perk 2 (Tier 2+) */}
+                        <div className={`border rounded-xl p-3 flex flex-col justify-between transition-all text-left ${
+                          rank.tier >= 2 
+                            ? "bg-amber-500/10 border-amber-500/20 text-white" 
+                            : "bg-slate-900/40 border-dashed border-white/5 text-slate-500 opacity-50"
+                        }`}>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold tracking-wider block text-amber-400">2階 青銅解鎖</span>
+                            <span className="text-xs font-extrabold block mt-0.5">⚠️ 置疑出題人的題目</span>
+                            <span className="text-[10px] leading-tight block mt-1">
+                              可針對出題作答中任何存有法律疑義、錯漏字、爭議瑕疵的題目直接提設置疑。
+                            </span>
+                          </div>
+                          {rank.tier >= 2 ? (
+                            <button
+                              onClick={() => {
+                                setDisputeSurveyId(questionnaires[0]?.id || "");
+                                setShowDisputeModal(true);
+                              }}
+                              className="w-full text-center mt-3 py-1 bg-amber-500 text-slate-950 rounded text-[10px] font-bold hover:bg-amber-400 duration-150 cursor-pointer"
+                            >
+                              建立置疑申訴 ➔
+                            </button>
+                          ) : (
+                            <span className="text-center text-[10px] mt-3 font-medium text-slate-500">🔒 達 青銅階級 解鎖</span>
+                          )}
+                        </div>
+
+                        {/* Perk 3 (Tier 3+) */}
+                        <div className={`border rounded-xl p-3 flex flex-col justify-between transition-all text-left ${
+                          rank.tier >= 3 
+                            ? "bg-indigo-500/10 border-indigo-500/20 text-white" 
+                            : "bg-slate-900/40 border-dashed border-white/5 text-slate-500 opacity-50"
+                        }`}>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold tracking-wider block text-indigo-400">3階 白銀解鎖</span>
+                            <span className="text-xs font-extrabold block mt-0.5">🔗複製 外連問卷 邀請朋友</span>
+                            <span className="text-[10px] leading-tight block mt-1">
+                              獲准直接複製並導出任何問卷的專屬直達邀請，便於發送給親朋好友作答。
+                            </span>
+                          </div>
+                          {rank.tier >= 3 ? (
+                            <div className="space-y-1.5 mt-3">
+                              <select
+                                id="perk3-survey-select"
+                                className="w-full bg-slate-800 text-[10px] font-bold text-indigo-200 border border-slate-700 rounded p-1"
+                                onChange={(e) => {
+                                  const sid = e.target.value;
+                                  if (sid) {
+                                    const directUrl = `${window.location.origin}${window.location.pathname}#fill/${sid}`;
+                                    navigator.clipboard.writeText(directUrl);
+                                    alert(`🔗 已完美複製問卷「${sid}」直達邀請鏈結：\n${directUrl}`);
+                                  }
+                                }}
+                              >
+                                <option value="">[請選擇問卷一鍵複製連結]</option>
+                                {questionnaires.map((q) => (
+                                  <option key={q.id} value={q.id}>{q.title}</option>
+                                ))}
+                              </select>
+                            </div>
+                          ) : (
+                            <span className="text-center text-[10px] mt-3 font-medium text-slate-500">🔒 達 白銀階級 解鎖</span>
+                          )}
+                        </div>
+
+                        {/* Perk 4 (Tier 4+) */}
+                        <div className={`border rounded-xl p-3 flex flex-col justify-between transition-all text-left ${
+                          rank.tier >= 4 
+                            ? "bg-emerald-500/10 border-emerald-500/20 text-white" 
+                            : "bg-slate-900/40 border-dashed border-white/5 text-slate-500 opacity-50"
+                        }`}>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold tracking-wider block text-emerald-400">4階 黃金解鎖</span>
+                            <span className="text-xs font-extrabold block mt-0.5">📝 協助出題與推薦</span>
+                            <span className="text-[10px] leading-tight block mt-1">
+                              可發揮主動出題意願，向出題人直接提議及推薦新設計的問卷題目。
+                            </span>
+                          </div>
+                          {rank.tier >= 4 ? (
+                            <button
+                              onClick={() => {
+                                setSuggestSurveyId(questionnaires[0]?.id || "");
+                                setSuggestQTitle("");
+                                setSuggestQOptions(["", ""]);
+                                setShowSuggestModal(true);
+                              }}
+                              className="w-full text-center mt-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-bold duration-150 cursor-pointer"
+                            >
+                              向出題人提議出題 ➔
+                            </button>
+                          ) : (
+                            <span className="text-center text-[10px] mt-3 font-medium text-slate-500">🔒 達 黃金階級 解鎖</span>
+                          )}
+                        </div>
+
+                        {/* Perk 5 (Tier 5+) */}
+                        <div className={`border rounded-xl p-3 flex flex-col justify-between transition-all text-left ${
+                          rank.tier >= 5 
+                            ? "bg-rose-500/10 border-rose-500/20 text-white" 
+                            : "bg-slate-900/40 border-dashed border-white/5 text-slate-500 opacity-50"
+                        }`}>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold tracking-wider block text-rose-400">5階 白金解鎖</span>
+                            <span className="text-xs font-extrabold block mt-0.5">🛑 提請封鎖停用問卷</span>
+                            <span className="text-[10px] leading-tight block mt-1">
+                              發現惡意問卷或釣魚問卷？您可隨時向管理者一鍵發出高防戶停用問卷申請。
+                            </span>
+                          </div>
+                          {rank.tier >= 5 ? (
+                            <button
+                              onClick={() => {
+                                setStopSurveyId(questionnaires[0]?.id || "");
+                                setStopReason("");
+                                setShowStopModal(true);
+                              }}
+                              className="w-full text-center mt-3 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded text-[10px] font-bold duration-150 cursor-pointer"
+                            >
+                              提報停用問卷 ➔
+                            </button>
+                          ) : (
+                            <span className="text-center text-[10px] mt-3 font-medium text-slate-500">🔒 達 白金階級 解鎖</span>
+                          )}
+                        </div>
+
+                        {/* Perk 6 (Tier 6+) */}
+                        <div className={`border rounded-xl p-3 flex flex-col justify-between transition-all text-left ${
+                          rank.tier >= 6 
+                            ? "bg-purple-500/10 border-purple-500/20 text-white" 
+                            : "bg-slate-900/40 border-dashed border-white/5 text-slate-500 opacity-50"
+                        }`}>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold tracking-wider block text-purple-400">6階 鑽石解鎖</span>
+                            <span className="text-xs font-extrabold block mt-0.5">⚡ 直接升級朋友白銀 (3階)</span>
+                            <span className="text-[10px] leading-tight block mt-1">
+                              每月高達 4 次機會！輸入對方帳號名稱即可強行直升其至 3 階 (白銀)。
+                            </span>
+                          </div>
+                          {rank.tier >= 6 ? (
+                            <button
+                              onClick={() => {
+                                setPromoFriendName("");
+                                setPromoFriendType("T3");
+                                setShowPromoFriendModal(true);
+                              }}
+                              className="w-full text-center mt-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[10px] font-bold duration-150 cursor-pointer"
+                            >
+                              一鍵拔擢朋友至白銀 ➔
+                            </button>
+                          ) : (
+                            <span className="text-center text-[10px] mt-3 font-medium text-slate-500">🔒 達 鑽石階級 解鎖</span>
+                          )}
+                        </div>
+
+                        {/* Perk 7 (Tier 7+) */}
+                        <div className={`border rounded-xl p-3 flex flex-col justify-between transition-all text-left ${
+                          rank.tier >= 7 
+                            ? "bg-teal-500/10 border-teal-500/20 text-white" 
+                            : "bg-slate-900/40 border-dashed border-white/5 text-slate-500 opacity-50"
+                        }`}>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold tracking-wider block text-teal-400">7階 傳奇解鎖</span>
+                            <span className="text-xs font-extrabold block mt-0.5">🛡️ 封禁其他帳號/直升白金(5階)</span>
+                            <span className="text-[10px] leading-tight block mt-1">
+                              可直升朋友至 5 階 (每週 2 次)，並且可向站主申請直接封禁違規帳戶 (每月 4 次)！
+                            </span>
+                          </div>
+                          {rank.tier >= 7 ? (
+                            <div className="flex gap-2 mt-3">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPromoFriendName("");
+                                  setPromoFriendType("T5");
+                                  setShowPromoFriendModal(true);
+                                }}
+                                className="flex-1 text-center py-1 bg-teal-600 hover:bg-teal-500 text-white rounded text-[9px] font-bold duration-150 cursor-pointer"
+                              >
+                                直升白金5階
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBanReqTarget("");
+                                  setBanReqReason("");
+                                  setShowBanRequestModal(true);
+                                }}
+                                className="flex-1 text-center py-1 bg-rose-700 hover:bg-rose-600 text-white rounded text-[9px] font-bold duration-150 cursor-pointer"
+                              >
+                                填封鎖舉報
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-center text-[10px] mt-3 font-medium text-slate-500">🔒 達 傳奇階級 解鎖</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* CHEAT REPORT CARD */}
+              <div id="cheat-reporting-community-card" className="bg-gradient-to-r from-rose-50 to-orange-50 rounded-2xl border border-rose-100 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1 text-left">
+                  <h3 className="text-sm font-extrabold text-rose-950 flex items-center space-x-1.5">
+                    <ShieldAlert className="w-5 h-5 text-rose-600 animate-pulse" />
+                    <span>🛡️ 社群公正維安：提報他人疑似開掛嫌疑</span>
+                  </h3>
+                  <p className="text-xs text-rose-800/85 leading-relaxed">
+                    維護公平作答環境！若您發現有其他答題人帳號疑似使用作弊腳本、刷積分或不正常快速晉級，請立即向管理員通報審查。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCheatReportTarget("");
+                    setCheatReportReason("");
+                    setShowCheatReportModal(true);
+                  }}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-sm duration-150 cursor-pointer shrink-0 self-start md:self-center"
+                >
+                  🚨 立即舉報開掛
+                </button>
+              </div>
+
+              {/* TRIVIA CARD PLAYGROUND */}
+              <div id="trivia-playground-card" className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-6">
+                <div>
+                  <h3 className="text-md font-bold text-slate-800 flex items-center space-x-1.5 border-b border-slate-100 pb-3">
+                    <Trophy className="w-5 h-5 text-amber-500" />
+                    <span>答題學知識：關卡闖關挑戰 (答對: +20點)</span>
+                  </h3>
+                </div>
+
+                {(() => {
+                  const activeQ = triviaQuestions[triviaIndex];
+                  if (!activeQ) {
+                    return (
+                      <p className="text-xs text-slate-400 italic">目前知識題庫中尚無任何題目可作答。</p>
+                    );
+                  }
+                  return (
+                    <div className="space-y-4 text-left">
+                      {/* Trivia Question Header */}
+                      <div className="bg-slate-50 p-4.5 rounded-xl border border-slate-100 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-indigo-600 tracking-wider">QUESTION #{triviaIndex + 1}</span>
+                          <span className="text-[10px] bg-slate-200/50 text-slate-500 rounded px-1.5 py-0.5 font-mono">
+                            題庫總計 {triviaQuestions.length} 題
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-extrabold text-slate-800 leading-relaxed">
+                          {activeQ.question}
+                        </h4>
+                      </div>
+
+                      {/* Options List */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {activeQ.options.map((opt) => {
+                          const isSelected = selectedTriviaOption === opt;
+                          return (
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => {
+                                if (triviaIsCorrect === null) {
+                                  setSelectedTriviaOption(opt);
+                                }
+                              }}
+                              className={`w-full text-left p-3.5 rounded-xl text-xs font-bold transition-all border outline-none cursor-pointer flex items-center justify-between ${
+                                isSelected
+                                  ? "bg-slate-900 text-white border-slate-900"
+                                  : "bg-white text-slate-705 hover:bg-slate-50 hover:border-slate-300 border-slate-100"
+                              }`}
+                            >
+                              <span>{opt}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Control and Validation button */}
+                      <div className="flex items-center justify-between pt-3 border-t border-slate-100/50">
+                        <div>
+                          {triviaIsCorrect === true && (
+                            <div className="text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl text-xs font-bold animate-pulse flex items-center space-x-1.5">
+                              <span>✅ 答對了！恭喜增加 20 點積分！</span>
+                            </div>
+                          )}
+                          {triviaIsCorrect === false && (
+                            <div className="text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center space-x-1.5">
+                              <span>❌ 答錯了，請重新核定作答！</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex space-x-2.5">
+                          {triviaIsCorrect === null ? (
+                            <button
+                              type="button"
+                              onClick={handleTriviaAnswerSubmit}
+                              className="px-5 py-2.5 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow hover:bg-indigo-700 transition-colors cursor-pointer"
+                            >
+                              驗證答案並拿積分
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={nextTriviaQuestion}
+                              className="px-5 py-2.5 bg-slate-900 text-white text-xs font-bold rounded-xl shadow hover:bg-slate-800 transition-colors cursor-pointer"
+                            >
+                              下一關 (下一題) ➔
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* MODALS RENDERING START */}
+              {/* Modal 1: Create Dispute */}
+              {showDisputeModal && (
+                <div id="dispute-modal" className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className="bg-white rounded-2xl w-full max-w-lg p-6 border border-slate-100 shadow-xl space-y-4 text-left">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                      <h4 className="text-sm font-extrabold text-slate-800 flex items-center space-x-1">
+                        <AlertTriangle className="w-5 h-5 text-amber-500 animate-pulse" />
+                        <span>對問卷題目發出置疑</span>
+                      </h4>
+                      <button type="button" onClick={() => setShowDisputeModal(false)} className="text-slate-400 hover:text-slate-600 font-bold text-xs select-none cursor-pointer">✕</button>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-500">申訴目標問卷</label>
+                        <select
+                          value={disputeSurveyId}
+                          onChange={(e) => setDisputeSurveyId(e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg p-2 text-xs text-slate-700"
+                        >
+                          {questionnaires.map((q) => (
+                            <option key={q.id} value={q.id}>{q.title} ({q.id})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-500">置疑與修正提議說明</label>
+                        <textarea
+                          rows={4}
+                          value={disputeText}
+                          onChange={(e) => setDisputeText(e.target.value)}
+                          placeholder="例如：問卷 第 2 題 的選項 B 存有錯別字，應更正為 ... ; 或者法律問答引用條款有爭議等。"
+                          className="w-full border border-slate-200 rounded-lg p-2 text-xs font-sans text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+                        ></textarea>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+                      <button type="button" onClick={() => setShowDisputeModal(false)} className="px-3.5 py-1.5 border border-slate-200 text-slate-500 rounded-lg font-bold text-xs cursor-pointer">取消</button>
+                      <button type="button" onClick={handleDisputeSubmit} className="px-5 py-1.5 bg-amber-500 text-slate-950 font-bold rounded-lg text-xs hover:bg-amber-400 cursor-pointer">提置訊置疑</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Modal 2: Suggest Question */}
+              {showSuggestModal && (
+                <div id="suggest-modal" className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className="bg-white rounded-2xl w-full max-w-lg p-6 border border-slate-100 shadow-xl space-y-4 text-left">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                      <h4 className="text-sm font-extrabold text-slate-800 flex items-center space-x-1">
+                        <HelpCircle className="w-5 h-5 text-emerald-500" />
+                        <span>協助出題人出題 (推薦題目)</span>
+                      </h4>
+                      <button type="button" onClick={() => setShowSuggestModal(false)} className="text-slate-400 hover:text-slate-600 font-bold text-xs select-none cursor-pointer">✕</button>
+                    </div>
+
+                    <div className="space-y-3.5">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-500">欲推薦的問卷</label>
+                        <select
+                          value={suggestSurveyId}
+                          onChange={(e) => setSuggestSurveyId(e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg p-2 text-xs text-slate-700"
+                        >
+                          {questionnaires.map((q) => (
+                            <option key={q.id} value={q.id}>{q.title} ({q.id})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-500">設計的題目說明</label>
+                        <input
+                          type="text"
+                          value={suggestQTitle}
+                          onChange={(e) => setSuggestQTitle(e.target.value)}
+                          placeholder="例如：您認為本平台未來最應優化哪一特權？"
+                          className="w-full border border-slate-200 rounded-lg p-2 text-xs text-slate-700"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-500">推薦題型</label>
+                        <select
+                          value={suggestQType}
+                          onChange={(e) => setSuggestQType(e.target.value as QuestionType)}
+                          className="w-full border border-slate-200 rounded-lg p-2 text-xs text-slate-700"
+                        >
+                          <option value="SINGLE_CHOICE">單選題 (Single Choice)</option>
+                          <option value="MULTI_CHOICE">多選題 (Multiple Choice)</option>
+                          <option value="SHORT_TEXT">簡答申論題 (Text / Essay)</option>
+                        </select>
+                      </div>
+
+                      {suggestQType !== "SHORT_TEXT" && (
+                        <div className="space-y-2">
+                          <label className="text-[11px] font-bold text-slate-500 flex justify-between">
+                            <span>推薦選項清單 (至少提供兩項選項)</span>
+                            <button
+                              type="button"
+                              onClick={() => setSuggestQOptions([...suggestQOptions, ""])}
+                              className="text-emerald-600 font-bold text-[10px] underline"
+                            >
+                              + 新增選項
+                            </button>
+                          </label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {suggestQOptions.map((opt, oIdx) => (
+                              <input
+                                key={oIdx}
+                                type="text"
+                                value={opt}
+                                placeholder={`項目 ${oIdx + 1}`}
+                                onChange={(e) => {
+                                  const c = [...suggestQOptions];
+                                  c[oIdx] = e.target.value;
+                                  setSuggestQOptions(c);
+                                }}
+                                className="border border-slate-200 rounded-lg p-1.5 text-xs text-slate-700"
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+                      <button type="button" onClick={() => setShowSuggestModal(false)} className="px-3.5 py-1.5 border border-slate-200 text-slate-500 rounded-lg font-bold text-xs cursor-pointer">取消</button>
+                      <button type="button" onClick={handleSuggestQSubmit} className="px-5 py-1.5 bg-emerald-600 text-white font-bold rounded-lg text-xs hover:bg-emerald-500 cursor-pointer">向作者提議題目</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Modal 3: Request Stopsurvey */}
+              {showStopModal && (
+                <div id="stop-modal" className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className="bg-white rounded-2xl w-full max-w-lg p-6 border border-slate-100 shadow-xl space-y-4 text-left">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                      <h4 className="text-sm font-extrabold text-slate-800 flex items-center space-x-1">
+                        <Ban className="w-5 h-5 text-rose-500" />
+                        <span>提請停用停辦出題人問卷</span>
+                      </h4>
+                      <button type="button" onClick={() => setShowStopModal(false)} className="text-slate-400 hover:text-slate-600 font-bold text-xs select-none cursor-pointer">✕</button>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-500">預計封暫停的問卷對象</label>
+                        <select
+                          value={stopSurveyId}
+                          onChange={(e) => setStopSurveyId(e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg p-2 text-xs text-slate-700"
+                        >
+                          {questionnaires.map((q) => (
+                            <option key={q.id} value={q.id}>{q.title} ({q.id})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-500">申訴及停關之正當事由</label>
+                        <textarea
+                          rows={4}
+                          value={stopReason}
+                          onChange={(e) => setStopReason(e.target.value)}
+                          placeholder="例如：此問卷蒐集法規條款疑存有侵犯個人用戶私密隱私、詐欺钓鱼疑慮，理由為 ..."
+                          className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none text-slate-700 focus:ring-1 focus:ring-rose-500"
+                        ></textarea>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+                      <button type="button" onClick={() => setShowStopModal(false)} className="px-3.5 py-1.5 border border-slate-200 text-slate-500 rounded-lg font-bold text-xs cursor-pointer">取消</button>
+                      <button type="button" onClick={handleStopSurveySubmit} className="px-5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs cursor-pointer">提出暫停申請</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Modal 4: Promo Friend modal */}
+              {showPromoFriendModal && (
+                <div id="promo-friend-modal" className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className="bg-white rounded-2xl w-full max-w-md p-6 border border-slate-100 shadow-xl space-y-4 text-left">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                      <h4 className="text-sm font-extrabold text-slate-800 flex items-center space-x-1">
+                        <Sparkles className="w-5 h-5 text-indigo-500 animate-pulse" />
+                        <span>特權操作：拔擢親友等階</span>
+                      </h4>
+                      <button type="button" onClick={() => setShowPromoFriendModal(false)} className="text-slate-400 hover:text-slate-600 font-bold text-xs select-none cursor-pointer">✕</button>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="bg-slate-50 rounded-xl p-3 text-slate-650 text-[11px] leading-relaxed border border-slate-100">
+                        提示：請輸入您朋友在平台上註冊的完整帳號名稱。提拔操作不需要經過超級管理員審核，其積分跟等階將立刻全體即時生效！
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-505">朋友的帳號名稱 (Username)</label>
+                        <input
+                          type="text"
+                          value={promoFriendName}
+                          onChange={(e) => setPromoFriendName(e.target.value)}
+                          placeholder="例如: test_user"
+                          className="w-full border border-slate-200 rounded-lg p-2.5 text-xs text-slate-700 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600">提拔定位</label>
+                        <div className="flex gap-4 pt-1">
+                          <label className="flex items-center space-x-2 text-xs font-bold">
+                            <input
+                              type="radio"
+                              name="friend-promo-type"
+                              checked={promoFriendType === "T3"}
+                              onChange={() => setPromoFriendType("T3")}
+                            />
+                            <span>直接晉升成 3階 白銀 🌟</span>
+                          </label>
+                          <label className="flex items-center space-x-2 text-xs font-bold">
+                            <input
+                              type="radio"
+                              name="friend-promo-type"
+                              checked={promoFriendType === "T5"}
+                              disabled={calculateRespondentRank(currentUser.respondentPoints || 0).tier < 7}
+                              onChange={() => setPromoFriendType("T5")}
+                            />
+                            <span className={calculateRespondentRank(currentUser.respondentPoints || 0).tier < 7 ? "text-slate-400 line-through" : ""}>
+                              直接晉升成 5階 白金 ⚡ (傳奇限享)
+                            </span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+                      <button type="button" onClick={() => setShowPromoFriendModal(false)} className="px-3.5 py-1.5 border border-slate-200 text-slate-500 rounded-lg font-bold text-xs cursor-pointer">取消</button>
+                      <button type="button" onClick={handlePromoFriendSubmit} className="px-5 py-1.5 bg-indigo-600 text-white font-bold rounded-lg text-xs hover:bg-indigo-500 cursor-pointer">強制直升到位</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Modal 5: Ban request target */}
+              {showBanRequestModal && (
+                <div id="ban-request-modal" className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className="bg-white rounded-2xl w-full max-w-md p-6 border border-slate-100 shadow-xl space-y-4 text-left">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                      <h4 className="text-sm font-extrabold text-slate-800 flex items-center space-x-1">
+                        <Ban className="w-5 h-5 text-rose-500 animate-bounce" />
+                        <span>傳奇尊爵特權：向站主提請封禁他人帳號</span>
+                      </h4>
+                      <button type="button" onClick={() => setShowBanRequestModal(false)} className="text-slate-400 hover:text-slate-600 font-bold text-xs select-none cursor-pointer">✕</button>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="bg-rose-50 rounded-xl p-3 text-rose-800 text-[11px] leading-normal border border-rose-100">
+                        注意：檢舉屬重大維安事件。身為傳奇級別頂尖用戶，您每月有 4 次直發封鎖要求之權利。一經核對不法，系統將會將該對象實行系統封鎖註銷！
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-500">欲封鎖檢舉帳號</label>
+                        <input
+                          type="text"
+                          value={banReqTarget}
+                          onChange={(e) => setBanReqTarget(e.target.value)}
+                          placeholder="例如: rogue_user"
+                          className="w-full border border-slate-200 rounded-lg p-2 text-xs text-slate-700 focus:ring-rose-500"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-500">事證/不法行為理由說明</label>
+                        <textarea
+                          rows={3}
+                          value={banReqReason}
+                          onChange={(e) => setBanReqReason(e.target.value)}
+                          placeholder="例如：該用戶在置疑欄惡意洗板、發布不雅/仇恨訊息，甚至使用腳本刷積分事宜。"
+                          className="w-full border border-slate-200 rounded-lg p-2 text-xs text-slate-700 focus:ring-rose-500"
+                        ></textarea>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+                      <button type="button" onClick={() => setShowBanRequestModal(false)} className="px-3.5 py-1.5 border border-slate-200 text-slate-500 rounded-lg font-bold text-xs cursor-pointer">取消</button>
+                      <button type="button" onClick={handleBanOtherSubmit} className="px-5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs cursor-pointer">送交封禁檢舉</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Modal 6: Cheat report modal */}
+              {showCheatReportModal && (
+                <div id="cheat-report-modal" className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                  <div className="bg-white rounded-2xl w-full max-w-md p-6 border border-slate-100 shadow-xl space-y-4 text-left">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                      <h4 className="text-sm font-extrabold text-slate-800 flex items-center space-x-1.5">
+                        <ShieldAlert className="w-5 h-5 text-rose-500 animate-bounce" />
+                        <span>舉報市民涉嫌開掛/作弊行為</span>
+                      </h4>
+                      <button type="button" onClick={() => setShowCheatReportModal(false)} className="text-slate-400 hover:text-slate-600 font-bold text-xs select-none cursor-pointer">✕</button>
+                    </div>
+
+                    <form onSubmit={handleCheatReportSubmit} className="space-y-4 font-sans">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-500">被檢舉的答題人帳號</label>
+                        <select
+                          value={cheatReportTarget}
+                          onChange={(e) => setCheatReportTarget(e.target.value)}
+                          className="w-full border border-slate-200 bg-white rounded-lg p-2 text-xs text-slate-700 outline-none font-medium"
+                          required
+                        >
+                          <option value="">-- 請選擇欲檢舉的答題市民 --</option>
+                          {Object.values(rbacUsers)
+                            .filter((u: any) => u.role === UserRole.RESPONDENT && u.username !== currentUser.username)
+                            .map((u: any) => (
+                              <option key={u.username} value={u.username}>
+                                {u.username} (積分: {u.respondentPoints || 0})
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+
+                      <div className="bg-amber-50 rounded-lg p-2.5 text-amber-800 text-[10px] leading-normal border border-amber-100 flex items-start space-x-1">
+                        <span className="text-xs">💡</span>
+                        <span>注意：惡意檢舉或無事證濫訴將受站管制！請客觀附述該用戶疑似開掛、異常積分飆升、作答速度異常之理由。</span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-500">涉嫌事由與異常特徵描述</label>
+                        <textarea
+                          rows={3}
+                          value={cheatReportReason}
+                          onChange={(e) => setCheatReportReason(e.target.value)}
+                          placeholder="例如：在短短數秒內答完上千道知識關卡、多帳號相互勾結、積分短時間暴增等。"
+                          className="w-full border border-slate-200 rounded-lg p-2 text-xs text-slate-700 outline-none focus:border-rose-500 font-sans"
+                          required
+                        ></textarea>
+                      </div>
+
+                      <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+                        <button type="button" onClick={() => setShowCheatReportModal(false)} className="px-3.5 py-1.5 border border-slate-200 text-slate-500 rounded-lg font-bold text-xs cursor-pointer">取消</button>
+                        <button type="submit" className="px-5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs cursor-pointer">送出調查檢舉</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+              {/* MODALS RENDERING END */}
+            </div>
+          )}
 
           {/* TAB 1: Analytics Report */}
           {activeTab === "analytics" && (
@@ -2403,7 +4203,7 @@ export default function Dashboard({
                                 onChange={(e) => setNewSurveyDistributedToAdmins(e.target.checked)}
                                 className="w-4 h-4 text-teal-600 rounded cursor-pointer"
                               />
-                              <span className="flex items-center text-teal-900 font-bold">
+                              <span className="flex items-center text-teal-950 font-bold">
                                 <span className="bg-teal-100 text-teal-905 text-[9px] px-1.5 py-0.5 rounded-md font-extrabold mr-1.5 shrink-0">特權下發</span>
                                 <span>下發授權此問卷項目至「系統管理員」（開啟後，系統管理員具有對此表格的所有共同檢閱與編輯權限）</span>
                               </span>
@@ -2523,7 +4323,7 @@ export default function Dashboard({
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-750 font-sans">📋 目前發布中之自定義問卷與管理：</h3>
                     <div className="grid grid-cols-1 gap-5">
-                      {accessibleQuestionnaires.map((q) => (
+                      {getSortedQuestionnaires(accessibleQuestionnaires).map((q) => (
                         <div key={q.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-150 shadow-sm space-y-4 font-sans text-xs">
                           <div className="flex items-start justify-between flex-wrap gap-2">
                             <div>
@@ -2534,93 +4334,181 @@ export default function Dashboard({
                                 {q.distributedToAdmins === false && (
                                   <span className="text-[9px] bg-amber-100 text-amber-800 border border-amber-200 font-bold px-1.5 py-0.5 rounded-md shadow-xs">🔒 僅超級管理員可控</span>
                                 )}
-                                {currentUser.role === UserRole.SUPER_ADMIN && (
-                                  <div className="flex items-center space-x-1 ml-2">
-                                    <button
-                                      id={`move-up-survey-${q.id}`}
-                                      type="button"
-                                      onClick={() => handleMoveSurvey(q.id, "up")}
-                                      disabled={questionnaires.findIndex(item => item.id === q.id) === 0}
-                                      className={`px-2 py-1 rounded-md border text-[9px] font-bold transition-all cursor-pointer ${
-                                        questionnaires.findIndex(item => item.id === q.id) === 0
-                                          ? "bg-slate-100 text-slate-350 border-slate-200 cursor-not-allowed"
-                                          : "bg-slate-800 text-white hover:bg-slate-700 border-slate-900 active:scale-95"
-                                      }`}
-                                      title="上移問卷順序"
-                                    >
-                                      ▲ 上移
-                                    </button>
-                                    <button
-                                      id={`move-down-survey-${q.id}`}
-                                      type="button"
-                                      onClick={() => handleMoveSurvey(q.id, "down")}
-                                      disabled={questionnaires.findIndex(item => item.id === q.id) === questionnaires.length - 1}
-                                      className={`px-2 py-1 rounded-md border text-[9px] font-bold transition-all cursor-pointer ${
-                                        questionnaires.findIndex(item => item.id === q.id) === questionnaires.length - 1
-                                          ? "bg-slate-100 text-slate-350 border-slate-200 cursor-not-allowed"
-                                          : "bg-slate-800 text-white hover:bg-slate-700 border-slate-900 active:scale-95"
-                                      }`}
-                                      title="下移問卷順序"
-                                    >
-                                      ▼ 下移
-                                    </button>
-                                  </div>
-                                )}
+                                {(() => {
+                                  const sortedSurveys = getSortedQuestionnaires(accessibleQuestionnaires);
+                                  const surveyIdx = sortedSurveys.findIndex(item => item.id === q.id);
+                                  return (
+                                    <div className="flex items-center space-x-1 ml-2">
+                                      <button
+                                        id={`move-up-survey-${q.id}`}
+                                        type="button"
+                                        onClick={() => handleMoveSurveyLocal(q.id, "up")}
+                                        disabled={surveyIdx === 0}
+                                        className={`px-2 py-1 rounded-md border text-[9px] font-bold transition-all cursor-pointer ${
+                                          surveyIdx === 0
+                                            ? "bg-slate-100 text-slate-350 border-slate-200 cursor-not-allowed"
+                                            : "bg-slate-800 text-white hover:bg-slate-700 border-slate-900 active:scale-95"
+                                        }`}
+                                        title="上移此問卷於此帳號之排序"
+                                      >
+                                        ▲ 上移
+                                      </button>
+                                      <button
+                                        id={`move-down-survey-${q.id}`}
+                                        type="button"
+                                        onClick={() => handleMoveSurveyLocal(q.id, "down")}
+                                        disabled={surveyIdx === sortedSurveys.length - 1}
+                                        className={`px-2 py-1 rounded-md border text-[9px] font-bold transition-all cursor-pointer ${
+                                          surveyIdx === sortedSurveys.length - 1
+                                            ? "bg-slate-100 text-slate-350 border-slate-200 cursor-not-allowed"
+                                            : "bg-slate-800 text-white hover:bg-slate-700 border-slate-900 active:scale-95"
+                                        }`}
+                                        title="下移此問卷於此帳號之排序"
+                                      >
+                                        ▼ 下移
+                                      </button>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                               <h4 className="text-base font-bold text-slate-800 mt-1.5">{q.title}</h4>
                               <p className="text-[11px] text-slate-400 mt-1 max-w-xl">{q.description}</p>
+
+                              {/* Citizen Suggestions block */}
+                              {((q as any).suggestions && (q as any).suggestions.length > 0) ? (
+                                <div className="mt-4 p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-2.5">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-extrabold text-indigo-900 flex items-center gap-1.5">
+                                      💡 答題市民推薦增設的題目提案 ({((q as any).suggestions).length} 筆)
+                                    </span>
+                                  </div>
+                                  <div className="divide-y divide-indigo-100/60 max-h-48 overflow-y-auto pr-1">
+                                    {((q as any).suggestions).map((sug: any) => (
+                                      <div key={sug.id} className="py-2.5 first:pt-0 last:pb-0 space-y-1">
+                                        <div className="flex items-start justify-between gap-2 border-b border-dashed border-indigo-100/40 pb-2">
+                                          <div>
+                                            <p className="text-xs font-bold text-slate-800">
+                                              {sug.title}
+                                            </p>
+                                            <p className="text-[10px] text-indigo-500 font-medium">
+                                              題型: <span className="font-bold">{sug.type}</span> &bull; 提案人: <span className="font-bold underline">{sug.author}</span> ({sug.createdAt})
+                                            </p>
+                                            {sug.options && sug.options.length > 0 && (
+                                              <div className="flex flex-wrap gap-1 mt-1">
+                                                {sug.options.map((opt: string, oi: number) => (
+                                                  <span key={oi} className="text-[9px] bg-white border border-slate-200 text-slate-500 px-1 py-0.5 rounded">
+                                                    {opt}
+                                                  </span>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center space-x-1.5 self-center shrink-0">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleImportSuggestion(q.id, sug)}
+                                              className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[9px] rounded-lg shadow-xs cursor-pointer"
+                                            >
+                                              採納匯入
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleRejectSuggestion(q.id, sug.id)}
+                                              className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold text-[9px] rounded-lg cursor-pointer"
+                                            >
+                                              忽視
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
 
                             <div className="flex space-x-1.5">
                               {/* TRIGGER INTEGRATED CONFIGURATION & QUESTION RE-ORDERING EDITOR */}
-                              <button
-                                id={`edit-survey-configs-btn-${q.id}`}
-                                onClick={() => {
-                                  setEditingSurveyId(q.id);
-                                  // Copy values to editor state
-                                  setEditSurveyTitle(q.title);
-                                  setEditSurveyDesc(q.description || "");
-                                  setEditSurveyStart(q.startTime || "");
-                                  setEditSurveyEnd(q.endTime || "");
-                                  setEditSurveyPwReq(q.passwordRequired || false);
-                                  setEditSurveyPw(q.password || "");
-                                  setEditSurveyEmail(q.emailNotificationEnabled || false);
-                                  setEditSurveyQuestions([...q.questions]);
-                                  setEditSurveyDistributedToAdmins(q.distributedToAdmins !== false);
-                                }}
-                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg shadow-sm cursor-pointer transition-transform duration-75 active:scale-95"
-                              >
-                                📝 整合修改與問卷欄位設定
-                              </button>
+                              {currentUser.role === UserRole.QUESTION_CREATOR && currentUser.starLevel < 2 ? (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="px-3 py-1.5 bg-slate-100 text-slate-400 font-bold text-[10px] rounded-lg cursor-not-allowed"
+                                  title="出題人等級需達到 2 階才可進行修改設定！"
+                                >
+                                  🔒 需晉升 2階解鎖編輯
+                                </button>
+                              ) : (
+                                <button
+                                  id={`edit-survey-configs-btn-${q.id}`}
+                                  onClick={() => {
+                                    setEditingSurveyId(q.id);
+                                    // Copy values to editor state
+                                    setEditSurveyTitle(q.title);
+                                    setEditSurveyDesc(q.description || "");
+                                    setEditSurveyStart(q.startTime || "");
+                                    setEditSurveyEnd(q.endTime || "");
+                                    setEditSurveyPwReq(q.passwordRequired || false);
+                                    setEditSurveyPw(q.password || "");
+                                    setEditSurveyEmail(q.emailNotificationEnabled || false);
+                                    setEditSurveyQuestions([...q.questions]);
+                                    setEditSurveyDistributedToAdmins(q.distributedToAdmins !== false);
+                                  }}
+                                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg shadow-sm cursor-pointer transition-transform duration-75 active:scale-95"
+                                >
+                                  📝 整合修改與問卷欄位設定
+                                </button>
+                              )}
 
-                              <button
-                                id={`toggle-survey-status-${q.id}`}
-                                onClick={() => {
-                                  const updated = questionnaires.map(item => item.id === q.id ? { ...item, isActive: !item.isActive } : item);
-                                  onUpdateQuestionnaires(updated);
-                                  addLog(
-                                    q.isActive ? "手動停用問卷" : "手動啟用問卷",
-                                    q.title,
-                                    `問卷與通道狀態切換為: ${!q.isActive ? "在線啟用" : "手動停用"}`
-                                  );
-                                }}
-                                className={`px-2.5 py-1.5 text-[10px] font-bold rounded-lg cursor-pointer ${
-                                  q.isActive 
-                                    ? "bg-amber-100 text-amber-800" 
-                                    : "bg-emerald-105 text-emerald-800 bg-emerald-100"
-                                }`}
-                              >
-                                {q.isActive ? "停用填表" : "重啟填表"}
-                              </button>
+                              {currentUser.role === UserRole.QUESTION_CREATOR && currentUser.starLevel < 2 ? (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="px-2.5 py-1.5 text-[10px] font-bold rounded-lg bg-slate-100 text-slate-400 cursor-not-allowed"
+                                >
+                                  🔒 2階解鎖啟用填表
+                                </button>
+                              ) : (
+                                <button
+                                  id={`toggle-survey-status-${q.id}`}
+                                  onClick={() => {
+                                    const updated = questionnaires.map(item => item.id === q.id ? { ...item, isActive: !item.isActive } : item);
+                                    onUpdateQuestionnaires(updated);
+                                    addLog(
+                                      q.isActive ? "手動停用問卷" : "手動啟用問卷",
+                                      q.title,
+                                      `問卷與通道狀態切換為: ${!q.isActive ? "在線啟用" : "手動停用"}`
+                                    );
+                                  }}
+                                  className={`px-2.5 py-1.5 text-[10px] font-bold rounded-lg cursor-pointer ${
+                                    q.isActive 
+                                      ? "bg-amber-100 text-amber-800" 
+                                      : "bg-emerald-105 text-emerald-800 bg-emerald-100"
+                                  }`}
+                                >
+                                  {q.isActive ? "停用填表" : "重啟填表"}
+                                </button>
+                              )}
                               
-                              <button
-                                id={`delete-survey-completely-${q.id}`}
-                                onClick={() => handleDeleteSurvey(q.id, q.title)}
-                                className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg duration-75"
-                                title="刪除此問卷數據"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {currentUser.role === UserRole.QUESTION_CREATOR && currentUser.starLevel < 3 ? (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="px-2.5 py-1.5 bg-slate-100 text-slate-400 font-bold text-[10px] rounded-lg cursor-not-allowed"
+                                  title="出題人等級需達到 3 階才可刪除！"
+                                >
+                                  🔒 需 3階解鎖刪除
+                                </button>
+                              ) : (
+                                <button
+                                  id={`delete-survey-completely-${q.id}`}
+                                  onClick={() => handleDeleteSurvey(q.id, q.title)}
+                                  className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg duration-75"
+                                  title="刪除此問卷數據"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
                           </div>
 
@@ -2788,6 +4676,55 @@ export default function Dashboard({
                 </div>
               </div>
 
+              {/* Cheat Reports Approvals list */}
+              <div className="p-5 bg-rose-50/50 rounded-2xl border border-rose-200/80 space-y-3.5">
+                <h3 className="text-xs font-bold text-slate-700 flex items-center space-x-1">
+                  <ShieldAlert className="w-4 h-4 text-rose-600 animate-pulse" />
+                  <span>🚨 答題市民開掛/作弊嫌疑檢舉審查中心</span>
+                </h3>
+
+                <div className="space-y-2">
+                  {cheatReports.filter(r => r.status === "PENDING").length > 0 ? (
+                    cheatReports.filter(r => r.status === "PENDING").map((rep) => (
+                      <div key={rep.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all">
+                        <div className="font-mono text-xs text-left">
+                          <p className="text-slate-500">通報時間: {rep.createdAt} | 紀錄ID: {rep.id}</p>
+                          <p className="text-slate-800 font-bold mt-1">
+                            舉報市民: <span className="text-indigo-600 font-extrabold">{rep.reporter}</span>
+                            <span className="mx-2 text-slate-300">➔</span>
+                            被舉報涉嫌人: <span className="text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100">{rep.target}</span>
+                          </p>
+                          <p className="text-slate-650 mt-2 bg-slate-50 p-2.5 rounded-lg text-[11px] leading-relaxed italic border border-slate-100">
+                            「 {rep.reason} 」
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleCheatReportAction(rep.id, "BAN")}
+                            className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg flex items-center space-x-1 cursor-pointer shadow-xs"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                            <span>證實開掛：立即封禁</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCheatReportAction(rep.id, "DISMISS")}
+                            className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-lg flex items-center space-x-1 border border-slate-200 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>查無不法：駁回檢舉</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-slate-400 italic">目前無任何待審核的開掛或作弊舉報案件。平台環境十分整潔！</p>
+                  )}
+                </div>
+              </div>
+
               {/* 新增全新帳號專區 */}
               <div className="space-y-4">
                 <div className="flex items-center space-x-2">
@@ -2830,6 +4767,8 @@ export default function Dashboard({
                       <option value={UserRole.OPERATOR}>操作員 (Operator)</option>
                       <option value={UserRole.ANALYST}>分析員 (Analyst)</option>
                       <option value={UserRole.SYSTEM_ADMIN}>系統管理員 (System Admin)</option>
+                      <option value={UserRole.QUESTION_CREATOR}>出題人 (Question Creator)</option>
+                      <option value={UserRole.RESPONDENT}>答題人 (Respondent)</option>
                       {currentUser.role === UserRole.WEBMASTER && (
                         <option value={UserRole.SUPER_ADMIN}>超級管理員 (Super Admin)</option>
                       )}
@@ -2901,8 +4840,14 @@ export default function Dashboard({
                             rbacUsers[uname].role === UserRole.WEBMASTER ? "系統站主" :
                             rbacUsers[uname].role === UserRole.SUPER_ADMIN ? "超級管理員" :
                             rbacUsers[uname].role === UserRole.SYSTEM_ADMIN ? "系統管理員" :
-                            rbacUsers[uname].role === UserRole.OPERATOR ? "操作員" : "分析員"
-                          } {rbacUsers[uname].starLevel ? `${rbacUsers[uname].starLevel}星` : ""}] {rbacUsers[uname].banned ? "(🔴 已封禁)" : ""}
+                            rbacUsers[uname].role === UserRole.OPERATOR ? "操作員" :
+                            rbacUsers[uname].role === UserRole.ANALYST ? "分析員" :
+                            rbacUsers[uname].role === UserRole.QUESTION_CREATOR ? "出題人" : "答題人"
+                          } {rbacUsers[uname].starLevel ? (
+                            (rbacUsers[uname].role === UserRole.QUESTION_CREATOR || rbacUsers[uname].role === UserRole.RESPONDENT)
+                              ? `${rbacUsers[uname].starLevel}階`
+                              : `${rbacUsers[uname].starLevel}星`
+                          ) : ""}] {rbacUsers[uname].banned ? "(🔴 已封禁)" : ""}
                         </option>
                       ))}
                     </select>
@@ -3008,9 +4953,12 @@ export default function Dashboard({
                                 `管理者將 【${rbacSelectedUser}】的職級轉換為 ${targetRole}。`
                               );
                               alert(`🎉 帳號 ${rbacSelectedUser} 的職級角色已成功變更為【${
+                                targetRole === UserRole.WEBMASTER ? "系統站主" :
                                 targetRole === UserRole.SUPER_ADMIN ? "超級管理員" :
                                 targetRole === UserRole.SYSTEM_ADMIN ? "系統管理員" :
-                                targetRole === UserRole.OPERATOR ? "操作員" : "分析員"
+                                targetRole === UserRole.OPERATOR ? "操作員" :
+                                targetRole === UserRole.ANALYST ? "分析員" :
+                                targetRole === UserRole.QUESTION_CREATOR ? "出題人" : "答題人"
                               }】！`);
                             }}
                             className="bg-white border border-slate-250 rounded p-1.5 text-xs w-full focus:border-indigo-500 font-bold text-slate-700"
@@ -3018,6 +4966,8 @@ export default function Dashboard({
                             <option value={UserRole.OPERATOR}>操作員 (Operator)</option>
                             <option value={UserRole.ANALYST}>分析員 (Analyst)</option>
                             <option value={UserRole.SYSTEM_ADMIN}>系統管理員 (System Admin)</option>
+                            <option value={UserRole.QUESTION_CREATOR}>出題人 (Question Creator)</option>
+                            <option value={UserRole.RESPONDENT}>答題人 (Respondent)</option>
                             {(currentUser.role === UserRole.WEBMASTER || rbacUsers[rbacSelectedUser].role === UserRole.SUPER_ADMIN) && (
                               <option value={UserRole.SUPER_ADMIN}>超級管理員 (Super Admin)</option>
                             )}
@@ -3153,6 +5103,8 @@ export default function Dashboard({
                         {currentUser.role === UserRole.SYSTEM_ADMIN && "系統管理員"}
                         {currentUser.role === UserRole.OPERATOR && "操作人員"}
                         {currentUser.role === UserRole.ANALYST && "分析人員"}
+                        {currentUser.role === UserRole.QUESTION_CREATOR && "出題人員"}
+                        {currentUser.role === UserRole.RESPONDENT && "答題人員"}
                       </span>
                     </div>
                   </div>
@@ -3299,6 +5251,186 @@ export default function Dashboard({
             />
           )}
 
+          {/* TAB 6.5: Trivia Questions Control Console */}
+          {activeTab === "trivia_questions" && canManageTriviaQuestions && (
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <BookOpen className="w-5 h-5 text-indigo-600 animate-pulse" />
+                    <span>📚 市民「答題學知識」：核心題庫管理控制台</span>
+                  </h2>
+                  <p className="text-slate-500 text-xs mt-1">
+                    在此新增、刪除或檢視答題學知識（市民學習端）的闖關題目與正確解答，將即時同步更新。
+                  </p>
+                </div>
+                <div className="text-[11px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-150 px-3 py-1 rounded-full shrink-0">
+                  全域知識試題總計：<strong>{triviaQuestions.length}</strong> 題
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Form to add content */}
+                <div className="lg:col-span-1 bg-slate-50/60 border border-slate-100 rounded-2xl p-5 space-y-4">
+                  <h3 className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5 pb-2 border-b border-slate-200">
+                    <span>➕</span> 擴充題庫：登錄新知識問題
+                  </h3>
+                  
+                  <form onSubmit={handleAddNewTriviaQuestion} className="space-y-4 text-xs">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-500 block">1. 試題題目文字描述</label>
+                      <textarea
+                        rows={3}
+                        value={newTriviaQText}
+                        onChange={(e) => setNewTriviaQText(e.target.value)}
+                        placeholder="請輸入欲新增之題目文字..."
+                        className="w-full bg-white border border-slate-250 rounded-xl p-2.5 focus:border-indigo-500 outline-none text-slate-750 font-sans font-medium"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-indigo-700 block">選項 A</label>
+                        <input
+                          type="text"
+                          value={newTriviaOptA}
+                          onChange={(e) => setNewTriviaOptA(e.target.value)}
+                          placeholder="選項 A 內容"
+                          className="w-full bg-white border border-slate-200 rounded-lg p-2 focus:border-indigo-500 text-[11px] outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-indigo-700 block">選項 B</label>
+                        <input
+                          type="text"
+                          value={newTriviaOptB}
+                          onChange={(e) => setNewTriviaOptB(e.target.value)}
+                          placeholder="選項 B 內容"
+                          className="w-full bg-white border border-slate-200 rounded-lg p-2 focus:border-indigo-500 text-[11px] outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-indigo-700 block">選項 C</label>
+                        <input
+                          type="text"
+                          value={newTriviaOptC}
+                          onChange={(e) => setNewTriviaOptC(e.target.value)}
+                          placeholder="選項 C 內容"
+                          className="w-full bg-white border border-slate-200 rounded-lg p-2 focus:border-indigo-500 text-[11px] outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-indigo-700 block">選項 D</label>
+                        <input
+                          type="text"
+                          value={newTriviaOptD}
+                          onChange={(e) => setNewTriviaOptD(e.target.value)}
+                          placeholder="選項 D 內容"
+                          className="w-full bg-white border border-slate-200 rounded-lg p-2 focus:border-indigo-500 text-[11px] outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-500 block">2. 核定正確答案</label>
+                      <select
+                        value={newTriviaCorrectLetter}
+                        onChange={(e) => setNewTriviaCorrectLetter(e.target.value)}
+                        className="w-full bg-white border border-slate-250 rounded-lg p-2 font-bold text-indigo-700 outline-none text-[11px]"
+                      >
+                        <option value="A">選項 A 答案</option>
+                        <option value="B">選項 B 答案</option>
+                        <option value="C">選項 C 答案</option>
+                        <option value="D">選項 D 答案</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-500 block">3. 市民答案解析與補充說明（選填）</label>
+                      <textarea
+                        rows={3}
+                        value={newTriviaExplanation}
+                        onChange={(e) => setNewTriviaExplanation(e.target.value)}
+                        placeholder="選填，提供市民答題後的詳細背景知識解析。"
+                        className="w-full bg-white border border-slate-250 rounded-xl p-2.5 focus:border-indigo-500 outline-none text-slate-600 font-sans text-[11px]"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 px-4 bg-indigo-650 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center space-x-1.5"
+                    >
+                      <PlusCircle className="w-4 h-4 text-emerald-400 animate-pulse" />
+                      <span>確認並登錄新題目</span>
+                    </button>
+                  </form>
+                </div>
+
+                {/* Question List view */}
+                <div className="lg:col-span-2 space-y-4">
+                  <h3 className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5 pb-2 border-b border-slate-100">
+                    <span>📖</span> 當前已登錄知識題庫 ({triviaQuestions.length} 題)
+                  </h3>
+
+                  <div className="space-y-3 max-h-[580px] overflow-y-auto pr-2">
+                    {triviaQuestions.map((t, idx) => (
+                      <div key={t.id} className="p-4 bg-slate-50/50 border border-slate-150 rounded-2xl space-y-2.5 shadow-xs relative hover:border-indigo-200 transition-all">
+                        <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-1.5">
+                          <span className="text-[10px] bg-slate-200/60 border border-slate-300 p-0.5 px-2 rounded-md font-mono text-slate-500 font-bold">
+                            #{t.id} (第 {idx + 1} 題)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTriviaQuestion(t.id)}
+                            className="p-1 px-1.5 text-rose-605 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 border border-transparent rounded-lg transition-all cursor-pointer flex items-center gap-1 text-[10px] font-extrabold"
+                            title="刪除題目"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>徹底刪除</span>
+                          </button>
+                        </div>
+
+                        <p className="text-xs font-black text-slate-800 leading-relaxed">{t.question}</p>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                          {t.options.map((opt: string, oi: number) => {
+                            const isCorrect = opt === t.correctAnswer;
+                            return (
+                              <div
+                                key={oi}
+                                className={`p-2 rounded-lg border ${
+                                  isCorrect
+                                    ? "bg-emerald-50 border-emerald-300 text-emerald-800 font-black flex items-center justify-between shadow-xs"
+                                    : "bg-white border-slate-200/60 text-slate-600"
+                                }`}
+                              >
+                                <span>{String.fromCharCode(65 + oi)}. {opt}</span>
+                                {isCorrect && <span className="text-[8px] bg-emerald-650 text-white rounded-md px-1.5 py-0.5 font-sans">正確解答</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="p-2.5 bg-indigo-50/40 text-[10px] text-indigo-900 rounded-lg border border-dashed border-indigo-100 font-sans leading-relaxed">
+                          <strong className="text-indigo-950">📚 背景學術解析：</strong>
+                          {t.explanation || "未提供補充背景知識解釋。"}
+                        </div>
+                      </div>
+                    ))}
+
+                    {triviaQuestions.length === 0 && (
+                      <div className="p-10 border border-dashed border-slate-205 rounded-2xl text-center space-y-1 bg-slate-50/50">
+                        <HelpCircle className="w-8 h-8 text-slate-300 mx-auto" />
+                        <p className="text-xs font-bold text-slate-500">當前知識題庫爲空</p>
+                        <p className="text-[10px] text-slate-400">請使用左側表單新增問題。</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAB 7: System Accounts Management (Webmaster only) */}
           {activeTab === "system_accounts" && currentUser.role === UserRole.WEBMASTER && (
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-6">
@@ -3361,6 +5493,8 @@ export default function Dashboard({
                         <option value={UserRole.OPERATOR}>操作員 (Operator)</option>
                         <option value={UserRole.ANALYST}>分析員 (Analyst)</option>
                         <option value={UserRole.SYSTEM_ADMIN}>系統管理員 (System Admin)</option>
+                        <option value={UserRole.QUESTION_CREATOR}>出題人 (Question Creator)</option>
+                        <option value={UserRole.RESPONDENT}>答題人 (Respondent)</option>
                         <option value={UserRole.SUPER_ADMIN}>超級管理員 (Super Admin)</option>
                       </select>
                     </div>
@@ -3541,31 +5675,55 @@ export default function Dashboard({
 
                             {/* Role selectors */}
                             <td className="py-3 px-4">
-                              <select
-                                value={uObj.role}
-                                disabled={isWebmaster || isSelf}
-                                onChange={(e) => handleUpdateUserRole(uname, e.target.value as UserRole)}
-                                className={`font-bold text-[11px] border rounded-lg p-1 transition-all outline-none ${
-                                  uObj.role === UserRole.WEBMASTER
-                                    ? "bg-amber-100 border-amber-300 text-amber-800 font-serif"
-                                    : uObj.role === UserRole.SUPER_ADMIN
-                                    ? "bg-indigo-100 border-indigo-300 text-indigo-800"
-                                    : uObj.role === UserRole.SYSTEM_ADMIN
-                                    ? "bg-purple-100 border-purple-300 text-purple-800"
-                                    : uObj.role === UserRole.OPERATOR
-                                    ? "bg-amber-5 border-amber-200 text-amber-700"
-                                    : "bg-blue-5 text-blue-700 border-blue-200"
-                                }`}
-                              >
-                                <option value={UserRole.OPERATOR}>操作員 (Operator)</option>
-                                <option value={UserRole.ANALYST}>分析員 (Analyst)</option>
-                                <option value={UserRole.SYSTEM_ADMIN}>系統管理員 (System Admin)</option>
-                                {isWebmaster ? (
-                                  <option value={UserRole.WEBMASTER}>系統站主 (Webmaster)</option>
-                                ) : (
-                                  <option value={UserRole.SUPER_ADMIN}>超級管理員 (Super Admin)</option>
+                              <div className="flex items-center space-x-1.5">
+                                {uObj.role === UserRole.WEBMASTER && (
+                                  <span className="text-amber-500 text-xs" title="最高支配權站主">👑</span>
                                 )}
-                              </select>
+                                {uObj.role === UserRole.SUPER_ADMIN && (
+                                  <span className="text-indigo-605 text-[10px]" title="超級管理員">⚡</span>
+                                )}
+                                {uObj.role === UserRole.SYSTEM_ADMIN && (
+                                  <span className="text-purple-600 text-[10px]" title="系統管理員">⚙️</span>
+                                )}
+                                {uObj.role === UserRole.QUESTION_CREATOR && (
+                                  <FileText className="w-3.5 h-3.5 text-indigo-600 shrink-0" title="出題人卷標" />
+                                )}
+                                {uObj.role === UserRole.RESPONDENT && (
+                                  <Pencil className="w-3.5 h-3.5 text-emerald-600 shrink-0 animate-pulse" title="答題人筆標" />
+                                )}
+
+                                <select
+                                  value={uObj.role}
+                                  disabled={isWebmaster || isSelf}
+                                  onChange={(e) => handleUpdateUserRole(uname, e.target.value as UserRole)}
+                                  className={`font-bold text-[11px] border rounded-lg p-1 transition-all outline-none ${
+                                    uObj.role === UserRole.WEBMASTER
+                                      ? "bg-amber-100 border-amber-300 text-amber-800 font-serif"
+                                      : uObj.role === UserRole.SUPER_ADMIN
+                                      ? "bg-indigo-100 border-indigo-300 text-indigo-800"
+                                      : uObj.role === UserRole.SYSTEM_ADMIN
+                                      ? "bg-purple-100 border-purple-300 text-purple-800"
+                                      : uObj.role === UserRole.QUESTION_CREATOR
+                                      ? "bg-indigo-50 border-indigo-200 text-indigo-700"
+                                      : uObj.role === UserRole.RESPONDENT
+                                      ? "bg-emerald-50 border-emerald-250 text-emerald-700"
+                                      : uObj.role === UserRole.OPERATOR
+                                      ? "bg-amber-5 border-amber-200 text-amber-700"
+                                      : "bg-blue-5 text-blue-700 border-blue-200"
+                                  }`}
+                                >
+                                  <option value={UserRole.OPERATOR}>操作員 (Operator)</option>
+                                  <option value={UserRole.ANALYST}>分析員 (Analyst)</option>
+                                  <option value={UserRole.SYSTEM_ADMIN}>系統管理員 (System Admin)</option>
+                                  <option value={UserRole.QUESTION_CREATOR}>出題人 (Question Creator)</option>
+                                  <option value={UserRole.RESPONDENT}>答題人 (Respondent)</option>
+                                  {isWebmaster ? (
+                                    <option value={UserRole.WEBMASTER}>系統站主 (Webmaster)</option>
+                                  ) : (
+                                    <option value={UserRole.SUPER_ADMIN}>超級管理員 (Super Admin)</option>
+                                  )}
+                                </select>
+                              </div>
                             </td>
 
                             {/* Password input / display */}
@@ -3658,6 +5816,37 @@ export default function Dashboard({
                                       <span className="text-[10px] text-slate-400 italic">無可選分配之問卷表單</span>
                                     )}
                                   </div>
+                                </div>
+                              ) : uObj.role === UserRole.QUESTION_CREATOR ? (
+                                <div className="space-y-2">
+                                  <div className="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-2 py-0.5 font-bold inline-block">
+                                    📝 出題人本級：僅能存取與統計個人創建之問卷
+                                  </div>
+                                  
+                                  {/* Privilege Toggle */}
+                                  <div className="flex items-center space-x-2">
+                                    <input
+                                      type="checkbox"
+                                      id={`privilege-trivia-${uname}`}
+                                      checked={!!uObj.canManageTrivia}
+                                      disabled={currentUser.role !== UserRole.WEBMASTER && currentUser.role !== UserRole.SUPER_ADMIN}
+                                      onChange={(e) => handleToggleUserTriviaPrivilege(uname, e.target.checked)}
+                                      className="w-3.5 h-3.5 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 accent-indigo-600 cursor-pointer"
+                                    />
+                                    <label
+                                      htmlFor={`privilege-trivia-${uname}`}
+                                      className="text-[10px] text-slate-600 font-extrabold cursor-pointer select-none hover:text-indigo-700"
+                                    >
+                                      📚 授予「市民答題學知識」題庫擴充特權
+                                    </label>
+                                  </div>
+                                </div>
+                              ) : uObj.role === UserRole.RESPONDENT ? (
+                                <div className="space-y-1">
+                                  <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-2 py-0.5 font-bold inline-block">
+                                    ✍️ 答題人獨立分級：不被管理員指派問卷
+                                  </div>
+                                  <p className="text-[9px] text-slate-450 font-medium">系統總計積分：<span className="font-bold text-emerald-600">{uObj.respondentPoints || 0}</span> 分</p>
                                 </div>
                               ) : (
                                 <div className="text-[11px] text-slate-500 font-bold bg-indigo-50/40 border border-indigo-100 rounded px-2 py-1 inline-block">
