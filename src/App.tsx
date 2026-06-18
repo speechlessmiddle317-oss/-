@@ -1,6 +1,22 @@
 import React, { useState, useEffect } from "react";
 import { Questionnaire, SurveyResponse, AppUser, AuditLog, PromotionApplication, UserRole } from "./types";
 import { INITIAL_QUESTIONNAIRES, INITIAL_RESPONSES, INITIAL_AUDIT_LOGS, INITIAL_PROMOTIONS } from "./utils/initialData";
+import {
+  fetchUsersFromFirestore,
+  saveAllUsersToFirestore,
+  saveUserToFirestore,
+  fetchQuestionnairesFromFirestore,
+  saveAllQuestionnairesToFirestore,
+  fetchResponsesFromFirestore,
+  saveAllResponsesToFirestore,
+  saveResponseToFirestore,
+  fetchAuditLogsFromFirestore,
+  saveAllAuditLogsToFirestore,
+  saveAuditLogToFirestore,
+  fetchPromotionsFromFirestore,
+  saveAllPromotionsToFirestore,
+  savePromotionToFirestore
+} from "./utils/firebaseDb";
 import Login from "./components/Login";
 import QuestionnaireFill from "./components/QuestionnaireFill";
 import QuerySystem from "./components/QuerySystem";
@@ -85,6 +101,106 @@ export default function App() {
       setCurrentUser(JSON.parse(keepUser));
     }
 
+    // Firestore Integration: Fetch authoritative data on background load
+    const syncAuthoritativeData = async () => {
+      try {
+        // 1. Questionnaire sync
+        const fsQs = await fetchQuestionnairesFromFirestore();
+        if (fsQs.length === 0) {
+          await saveAllQuestionnairesToFirestore(questionnaires.length > 0 ? questionnaires : INITIAL_QUESTIONNAIRES);
+        } else {
+          setQuestionnaires(fsQs);
+          localStorage.setItem("sub_surveys", JSON.stringify(fsQs));
+        }
+
+        // 2. Responses sync
+        const fsResponses = await fetchResponsesFromFirestore();
+        if (fsResponses.length === 0) {
+          await saveAllResponsesToFirestore(responses.length > 0 ? responses : INITIAL_RESPONSES);
+        } else {
+          setResponses(fsResponses);
+          localStorage.setItem("sub_responses", JSON.stringify(fsResponses));
+        }
+
+        // 3. User account directory sync
+        const fsUsers = await fetchUsersFromFirestore();
+        if (Object.keys(fsUsers).length === 0) {
+          const localUsersRaw = localStorage.getItem("sub_users");
+          const { INITIAL_USERS } = await import("./utils/initialData");
+          const usersToSeed = localUsersRaw ? JSON.parse(localUsersRaw) : INITIAL_USERS;
+          await saveAllUsersToFirestore(usersToSeed);
+        } else {
+          localStorage.setItem("sub_users", JSON.stringify(fsUsers));
+          // If currentUser is loaded, update their state with backend points data
+          if (keepUser) {
+            const parsedLogged = JSON.parse(keepUser);
+            const backendUser = fsUsers[parsedLogged.username.toLowerCase()];
+            if (backendUser) {
+              const updatedUser = { ...parsedLogged, ...backendUser };
+              setCurrentUser(updatedUser);
+              localStorage.setItem("sub_logged_user", JSON.stringify(updatedUser));
+            }
+          }
+        }
+
+        // 4. Audit Log sync
+        const fsLogs = await fetchAuditLogsFromFirestore();
+        if (fsLogs.length === 0) {
+          await saveAllAuditLogsToFirestore(logs.length > 0 ? logs : INITIAL_AUDIT_LOGS);
+        } else {
+          const sorted = fsLogs.sort((a, b) => b.id.localeCompare(a.id));
+          setLogs(sorted);
+          localStorage.setItem("sub_logs", JSON.stringify(sorted));
+        }
+
+        // 5. Promotions sync
+        const fsPromos = await fetchPromotionsFromFirestore();
+        if (fsPromos.length === 0) {
+          await saveAllPromotionsToFirestore(promotions.length > 0 ? promotions : INITIAL_PROMOTIONS);
+        } else {
+          setPromotions(fsPromos);
+          localStorage.setItem("sub_promotions", JSON.stringify(fsPromos));
+        }
+
+        // 6. Cheat reports sync
+        const { fetchCheatReportsFromFirestore, saveAllCheatReportsToFirestore, fetchQuotaRequestsFromFirestore, saveAllQuotaRequestsToFirestore, fetchTriviaQuestionsFromFirestore, saveAllTriviaQuestionsToFirestore } = await import("./utils/firebaseDb");
+        const fsCheat = await fetchCheatReportsFromFirestore();
+        if (fsCheat.length === 0) {
+          const localCheatRaw = localStorage.getItem("global_cheat_reports");
+          if (localCheatRaw) {
+            await saveAllCheatReportsToFirestore(JSON.parse(localCheatRaw));
+          }
+        } else {
+          localStorage.setItem("global_cheat_reports", JSON.stringify(fsCheat));
+        }
+
+        // 7. Quota requests sync
+        const fsQuotas = await fetchQuotaRequestsFromFirestore();
+        if (fsQuotas.length === 0) {
+          const localQuotasRaw = localStorage.getItem("global_quota_requests");
+          if (localQuotasRaw) {
+            await saveAllQuotaRequestsToFirestore(JSON.parse(localQuotasRaw));
+          }
+        } else {
+          localStorage.setItem("global_quota_requests", JSON.stringify(fsQuotas));
+        }
+
+        // 8. Trivia Questions sync
+        const fsTrivia = await fetchTriviaQuestionsFromFirestore();
+        if (fsTrivia.length === 0) {
+          const localTriviaRaw = localStorage.getItem("sub_trivia_questions");
+          if (localTriviaRaw) {
+            await saveAllTriviaQuestionsToFirestore(JSON.parse(localTriviaRaw));
+          }
+        } else {
+          localStorage.setItem("sub_trivia_questions", JSON.stringify(fsTrivia));
+        }
+      } catch (err) {
+        console.warn("Firestore background loading sync bypassed:", err);
+      }
+    };
+    syncAuthoritativeData();
+
     // Hash listener
     const handleHashChange = () => {
       setHash(window.location.hash);
@@ -97,21 +213,25 @@ export default function App() {
   const handleUpdateQuestionnaires = (updated: Questionnaire[]) => {
     setQuestionnaires(updated);
     localStorage.setItem("sub_surveys", JSON.stringify(updated));
+    saveAllQuestionnairesToFirestore(updated);
   };
 
   const handleUpdateResponses = (updated: SurveyResponse[]) => {
     setResponses(updated);
     localStorage.setItem("sub_responses", JSON.stringify(updated));
+    saveAllResponsesToFirestore(updated);
   };
 
   const handleUpdateLogs = (updated: AuditLog[]) => {
     setLogs(updated);
     localStorage.setItem("sub_logs", JSON.stringify(updated));
+    saveAllAuditLogsToFirestore(updated);
   };
 
   const handleUpdatePromotions = (updated: PromotionApplication[]) => {
     setPromotions(updated);
     localStorage.setItem("sub_promotions", JSON.stringify(updated));
+    saveAllPromotionsToFirestore(updated);
   };
 
   const addLog = (user: string, role: string, action: string, target: string, details: string) => {
@@ -204,6 +324,9 @@ export default function App() {
           uList[uName].starLevel = nextTier;
 
           localStorage.setItem("sub_users", JSON.stringify(uList));
+          
+          // Save updated stats (points + tier) of respondent to Firestore
+          saveUserToFirestore(uName, uList[uName]);
           
           // Update current user state as well
           const updatedUser = {

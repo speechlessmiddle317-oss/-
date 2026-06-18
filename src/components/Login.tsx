@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Eye, EyeOff, Lock, User, CheckCircle2 } from "lucide-react";
 import { AppUser, UserRole, StarLevel } from "../types";
 import { INITIAL_USERS } from "../utils/initialData";
+import { saveUserToFirestore } from "../utils/firebaseDb";
 
 interface LoginProps {
   onLoginSuccess: (user: AppUser) => void;
@@ -69,6 +70,9 @@ export default function Login({ onLoginSuccess, addLog }: LoginProps) {
 
     usersList[cleanUsername] = brandNewUser;
     localStorage.setItem("sub_users", JSON.stringify(usersList));
+    
+    // Save registered user to Firestore backend database
+    saveUserToFirestore(cleanUsername, brandNewUser);
 
     addLog(
       cleanUsername,

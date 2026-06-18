@@ -1,0 +1,130 @@
+{
+  "collections": {
+    "users": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string" },
+          "password": { "type": "string" },
+          "role": { "type": "string" },
+          "assignedTables": { "type": "array", "items": { "type": "string" } },
+          "starLevel": { "type": "number" },
+          "banned": { "type": "boolean" },
+          "respondentPoints": { "type": "number" },
+          "respondentSubRank": { "type": "number" },
+          "promotedFriendsThisMonthCount_T3": { "type": "number" },
+          "promotedFriendsThisWeekCount_T5": { "type": "number" },
+          "bannedOtherAppliedThisMonthCount": { "type": "number" },
+          "extraT3Quota": { "type": "number" },
+          "extraT5Quota": { "type": "number" },
+          "extraBanQuota": { "type": "number" }
+        }
+      }
+    },
+    "questionnaires": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "creator": { "type": "string" },
+          "description": { "type": "string" },
+          "questions": { "type": "array" },
+          "visibleToRoles": { "type": "array" },
+          "passwordRestricted": { "type": "boolean" },
+          "surveyPassword": { "type": "string" },
+          "allowPointsRedemption": { "type": "boolean" },
+          "pointsCost": { "type": "number" },
+          "banned": { "type": "boolean" },
+          "status": { "type": "string" },
+          "createdAt": { "type": "string" }
+        }
+      }
+    },
+    "responses": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "surveyId": { "type": "string" },
+          "surveyTitle": { "type": "string" },
+          "respondentUsername": { "type": "string" },
+          "answers": { "type": "object" },
+          "auditState": { "type": "string" },
+          "disputed": { "type": "boolean" },
+          "disputeReason": { "type": "string" },
+          "submittedAt": { "type": "string" }
+        }
+      }
+    },
+    "audit_logs": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "timestamp": { "type": "string" },
+          "user": { "type": "string" },
+          "role": { "type": "string" },
+          "action": { "type": "string" },
+          "target": { "type": "string" },
+          "details": { "type": "string" }
+        }
+      }
+    },
+    "promotions": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "username": { "type": "string" },
+          "currentRole": { "type": "string" },
+          "requestedRole": { "type": "string" },
+          "status": { "type": "string" },
+          "reason": { "type": "string" },
+          "reviewer": { "type": "string" },
+          "appliedAt": { "type": "string" }
+        }
+      }
+    },
+    "cheat_reports": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string" },
+          "reporter": { "type": "string" },
+          "target": { "type": "string" },
+          "reason": { "type": "string" },
+          "status": { "type": "string" },
+          "createdAt": { "type": "string" }
+        }
+      }
+    },
+    "dispute_requests": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "surveyId": { "type": "string" },
+          "reporter": { "type": "string" },
+          "reason": { "type": "string" },
+          "status": { "type": "string" },
+          "createdAt": { "type": "string" }
+        }
+      }
+    },
+    "quota_requests": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "requester": { "type": "string" },
+          "perkName": { "type": "string" },
+          "requestedCount": { "type": "number" },
+          "status": { "type": "string" },
+          "createdAt": { "type": "string" }
+        }
+      }
+    }
+  }
+}
