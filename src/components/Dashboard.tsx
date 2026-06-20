@@ -3348,6 +3348,8 @@ export default function Dashboard({
                   );
                 })()}
               </div>
+            </div>
+          )}
 
               {/* MODALS RENDERING START */}
               {/* Modal: Privilege Hierarchy Description */}
@@ -3899,8 +3901,6 @@ export default function Dashboard({
                 </div>
               )}
               {/* MODALS RENDERING END */}
-            </div>
-          )}
 
           {/* TAB 1: Analytics Report */}
           {activeTab === "analytics" && (
@@ -5895,7 +5895,7 @@ export default function Dashboard({
                           }}
                           className="text-[10px] text-indigo-600 font-bold bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded cursor-pointer transition-all active:scale-95"
                         >
-                          [點選: 權限分級 💡]
+                          [權限分級說明 💡]
                         </button>
                       </span>
                       <span 
